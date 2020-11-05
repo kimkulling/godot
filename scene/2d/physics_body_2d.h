@@ -39,14 +39,10 @@
 class KinematicCollision2D;
 
 class PhysicsBody2D : public CollisionObject2D {
-
 	GDCLASS(PhysicsBody2D, CollisionObject2D);
 
 	uint32_t collision_layer;
 	uint32_t collision_mask;
-
-	void _set_layers(uint32_t p_mask);
-	uint32_t _get_layers() const;
 
 protected:
 	void _notification(int p_what);
@@ -67,7 +63,7 @@ public:
 	void set_collision_layer_bit(int p_bit, bool p_value);
 	bool get_collision_layer_bit(int p_bit) const;
 
-	Array get_collision_exceptions();
+	TypedArray<PhysicsBody2D> get_collision_exceptions();
 	void add_collision_exception_with(Node *p_node); //must be physicsbody
 	void remove_collision_exception_with(Node *p_node);
 
@@ -75,7 +71,6 @@ public:
 };
 
 class StaticBody2D : public PhysicsBody2D {
-
 	GDCLASS(StaticBody2D, PhysicsBody2D);
 
 	Vector2 constant_linear_velocity;
@@ -104,7 +99,6 @@ private:
 };
 
 class RigidBody2D : public PhysicsBody2D {
-
 	GDCLASS(RigidBody2D, PhysicsBody2D);
 
 public:
@@ -143,13 +137,13 @@ private:
 	CCDMode ccd_mode;
 
 	struct ShapePair {
-
 		int body_shape;
 		int local_shape;
 		bool tagged;
 		bool operator<(const ShapePair &p_sp) const {
-			if (body_shape == p_sp.body_shape)
+			if (body_shape == p_sp.body_shape) {
 				return local_shape < p_sp.local_shape;
+			}
 
 			return body_shape < p_sp.body_shape;
 		}
@@ -161,19 +155,16 @@ private:
 		}
 	};
 	struct RigidBody2D_RemoveAction {
-
 		ObjectID body_id;
 		ShapePair pair;
 	};
 	struct BodyState {
-
 		//int rc;
 		bool in_scene;
 		VSet<ShapePair> shapes;
 	};
 
 	struct ContactMonitor {
-
 		bool locked;
 		Map<ObjectID, BodyState> body_map;
 	};
@@ -243,7 +234,7 @@ public:
 	CCDMode get_continuous_collision_detection_mode() const;
 
 	void apply_central_impulse(const Vector2 &p_impulse);
-	void apply_impulse(const Vector2 &p_offset, const Vector2 &p_impulse);
+	void apply_impulse(const Vector2 &p_impulse, const Vector2 &p_position = Vector2());
 	void apply_torque_impulse(float p_torque);
 
 	void set_applied_force(const Vector2 &p_force);
@@ -253,12 +244,12 @@ public:
 	float get_applied_torque() const;
 
 	void add_central_force(const Vector2 &p_force);
-	void add_force(const Vector2 &p_offset, const Vector2 &p_force);
+	void add_force(const Vector2 &p_force, const Vector2 &p_position = Vector2());
 	void add_torque(float p_torque);
 
-	Array get_colliding_bodies() const; //function for script
+	TypedArray<Node2D> get_colliding_bodies() const; //function for script
 
-	virtual String get_configuration_warning() const;
+	virtual String get_configuration_warning() const override;
 
 	RigidBody2D();
 	~RigidBody2D();
@@ -271,7 +262,6 @@ VARIANT_ENUM_CAST(RigidBody2D::Mode);
 VARIANT_ENUM_CAST(RigidBody2D::CCDMode);
 
 class KinematicBody2D : public PhysicsBody2D {
-
 	GDCLASS(KinematicBody2D, PhysicsBody2D);
 
 public:
@@ -344,7 +334,6 @@ public:
 };
 
 class KinematicCollision2D : public Reference {
-
 	GDCLASS(KinematicCollision2D, Reference);
 
 	KinematicBody2D *owner;

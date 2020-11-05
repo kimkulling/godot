@@ -45,7 +45,6 @@
 namespace GDMonoInternals {
 
 void tie_managed_to_unmanaged(MonoObject *managed, Object *unmanaged) {
-
 	// This method should not fail
 
 	CRASH_COND(!unmanaged);
@@ -110,12 +109,10 @@ void tie_managed_to_unmanaged(MonoObject *managed, Object *unmanaged) {
 	CSharpInstance *csharp_instance = CSharpInstance::create_for_managed_type(unmanaged, script.ptr(), gchandle);
 
 	unmanaged->set_script_and_instance(script, csharp_instance);
-
-	csharp_instance->connect_event_signals();
 }
 
 void unhandled_exception(MonoException *p_exc) {
-	mono_unhandled_exception((MonoObject *)p_exc); // prints the exception as well
+	mono_print_unhandled_exception((MonoObject *)p_exc);
 
 	if (GDMono::get_singleton()->get_unhandled_exception_policy() == GDMono::POLICY_TERMINATE_APP) {
 		// Too bad 'mono_invoke_unhandled_exception_hook' is not exposed to embedders
@@ -123,9 +120,10 @@ void unhandled_exception(MonoException *p_exc) {
 		GD_UNREACHABLE();
 	} else {
 #ifdef DEBUG_ENABLED
-		GDMonoUtils::debug_send_unhandled_exception_error((MonoException *)p_exc);
-		if (EngineDebugger::is_active())
+		GDMonoUtils::debug_send_unhandled_exception_error(p_exc);
+		if (EngineDebugger::is_active()) {
 			EngineDebugger::get_singleton()->poll_events(false);
+		}
 #endif
 	}
 }

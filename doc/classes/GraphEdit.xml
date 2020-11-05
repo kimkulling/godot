@@ -193,14 +193,9 @@
 		</member>
 	</members>
 	<signals>
-		<signal name="_begin_node_move">
+		<signal name="begin_node_move">
 			<description>
 				Emitted at the beginning of a GraphNode movement.
-			</description>
-		</signal>
-		<signal name="_end_node_move">
-			<description>
-				Emitted at the end of a GraphNode movement.
 			</description>
 		</signal>
 		<signal name="connection_from_empty">
@@ -240,7 +235,7 @@
 		</signal>
 		<signal name="copy_nodes_request">
 			<description>
-				Emitted when the user presses [code]Ctrl + C[/code].
+				Emitted when the user presses [kbd]Ctrl + C[/kbd].
 			</description>
 		</signal>
 		<signal name="delete_nodes_request">
@@ -266,6 +261,11 @@
 				Emitted when a GraphNode is attempted to be duplicated in the GraphEdit.
 			</description>
 		</signal>
+		<signal name="end_node_move">
+			<description>
+				Emitted at the end of a GraphNode movement.
+			</description>
+		</signal>
 		<signal name="node_selected">
 			<argument index="0" name="node" type="Node">
 			</argument>
@@ -273,9 +273,15 @@
 				Emitted when a GraphNode is selected.
 			</description>
 		</signal>
+		<signal name="node_unselected">
+			<argument index="0" name="node" type="Node">
+			</argument>
+			<description>
+			</description>
+		</signal>
 		<signal name="paste_nodes_request">
 			<description>
-				Emitted when the user presses [code]Ctrl + V[/code].
+				Emitted when the user presses [kbd]Ctrl + V[/kbd].
 			</description>
 		</signal>
 		<signal name="popup_request">

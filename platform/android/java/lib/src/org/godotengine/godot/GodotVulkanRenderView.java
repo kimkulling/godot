@@ -30,29 +30,31 @@
 
 package org.godotengine.godot;
 
-import android.annotation.SuppressLint;
-import android.view.GestureDetector;
-import android.view.KeyEvent;
-import android.view.MotionEvent;
-import android.view.SurfaceView;
 import org.godotengine.godot.input.GodotGestureHandler;
 import org.godotengine.godot.input.GodotInputHandler;
 import org.godotengine.godot.vulkan.VkRenderer;
 import org.godotengine.godot.vulkan.VkSurfaceView;
 
-public class GodotVulkanRenderView extends VkSurfaceView implements GodotRenderView {
+import android.annotation.SuppressLint;
+import android.content.Context;
+import android.view.GestureDetector;
+import android.view.InputDevice;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.SurfaceView;
 
-	private final Godot mActivity;
+public class GodotVulkanRenderView extends VkSurfaceView implements GodotRenderView {
+	private final Godot godot;
 	private final GodotInputHandler mInputHandler;
 	private final GestureDetector mGestureDetector;
 	private final VkRenderer mRenderer;
 
-	public GodotVulkanRenderView(Godot activity) {
-		super(activity);
+	public GodotVulkanRenderView(Context context, Godot godot) {
+		super(context);
 
-		mActivity = activity;
+		this.godot = godot;
 		mInputHandler = new GodotInputHandler(this);
-		mGestureDetector = new GestureDetector(mActivity, new GodotGestureHandler(this));
+		mGestureDetector = new GestureDetector(context, new GodotGestureHandler(this));
 		mRenderer = new VkRenderer();
 
 		setFocusableInTouchMode(true);
@@ -86,7 +88,12 @@ public class GodotVulkanRenderView extends VkSurfaceView implements GodotRenderV
 
 	@Override
 	public void onBackPressed() {
-		mActivity.onBackPressed();
+		godot.onBackPressed();
+	}
+
+	@Override
+	public GodotInputHandler getInputHandler() {
+		return mInputHandler;
 	}
 
 	@SuppressLint("ClickableViewAccessibility")
@@ -94,22 +101,22 @@ public class GodotVulkanRenderView extends VkSurfaceView implements GodotRenderV
 	public boolean onTouchEvent(MotionEvent event) {
 		super.onTouchEvent(event);
 		mGestureDetector.onTouchEvent(event);
-		return mActivity.gotTouchEvent(event);
+		return mInputHandler.onTouchEvent(event);
 	}
 
 	@Override
 	public boolean onKeyUp(final int keyCode, KeyEvent event) {
-		return mInputHandler.onKeyUp(keyCode, event) || super.onKeyUp(keyCode, event);
+		return mInputHandler.onKeyUp(keyCode, event);
 	}
 
 	@Override
 	public boolean onKeyDown(final int keyCode, KeyEvent event) {
-		return mInputHandler.onKeyDown(keyCode, event) || super.onKeyDown(keyCode, event);
+		return mInputHandler.onKeyDown(keyCode, event);
 	}
 
 	@Override
 	public boolean onGenericMotionEvent(MotionEvent event) {
-		return mInputHandler.onGenericMotionEvent(event) || super.onGenericMotionEvent(event);
+		return mInputHandler.onGenericMotionEvent(event);
 	}
 
 	@Override

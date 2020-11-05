@@ -35,12 +35,9 @@
 #include "scene/resources/texture.h"
 
 class Sprite2D : public Node2D {
-
 	GDCLASS(Sprite2D, Node2D);
 
 	Ref<Texture2D> texture;
-	Ref<Texture2D> normal_map;
-	Ref<Texture2D> specular;
 	Color specular_color;
 	float shininess;
 
@@ -67,38 +64,26 @@ protected:
 
 	static void _bind_methods();
 
-	virtual void _validate_property(PropertyInfo &property) const;
+	virtual void _validate_property(PropertyInfo &property) const override;
 
 public:
 #ifdef TOOLS_ENABLED
-	virtual Dictionary _edit_get_state() const;
-	virtual void _edit_set_state(const Dictionary &p_state);
+	virtual Dictionary _edit_get_state() const override;
+	virtual void _edit_set_state(const Dictionary &p_state) override;
 
-	virtual void _edit_set_pivot(const Point2 &p_pivot);
-	virtual Point2 _edit_get_pivot() const;
-	virtual bool _edit_use_pivot() const;
-	virtual bool _edit_is_selected_on_click(const Point2 &p_point, double p_tolerance) const;
+	virtual void _edit_set_pivot(const Point2 &p_pivot) override;
+	virtual Point2 _edit_get_pivot() const override;
+	virtual bool _edit_use_pivot() const override;
+	virtual bool _edit_is_selected_on_click(const Point2 &p_point, double p_tolerance) const override;
 
-	virtual Rect2 _edit_get_rect() const;
-	virtual bool _edit_use_rect() const;
+	virtual Rect2 _edit_get_rect() const override;
+	virtual bool _edit_use_rect() const override;
 #endif
 
 	bool is_pixel_opaque(const Point2 &p_point) const;
 
 	void set_texture(const Ref<Texture2D> &p_texture);
 	Ref<Texture2D> get_texture() const;
-
-	void set_normal_map(const Ref<Texture2D> &p_texture);
-	Ref<Texture2D> get_normal_map() const;
-
-	void set_specular_map(const Ref<Texture2D> &p_texture);
-	Ref<Texture2D> get_specular_map() const;
-
-	void set_specular_color(const Color &p_color);
-	Color get_specular_color() const;
-
-	void set_shininess(float p_shininess);
-	float get_shininess() const;
 
 	void set_centered(bool p_center);
 	bool is_centered() const;
@@ -134,7 +119,7 @@ public:
 	int get_hframes() const;
 
 	Rect2 get_rect() const;
-	virtual Rect2 get_anchorable_rect() const;
+	virtual Rect2 get_anchorable_rect() const override;
 
 	Sprite2D();
 	~Sprite2D();

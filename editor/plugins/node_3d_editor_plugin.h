@@ -28,8 +28,8 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#ifndef SPATIAL_EDITOR_PLUGIN_H
-#define SPATIAL_EDITOR_PLUGIN_H
+#ifndef NODE_3D_EDITOR_PLUGIN_H
+#define NODE_3D_EDITOR_PLUGIN_H
 
 #include "editor/editor_node.h"
 #include "editor/editor_plugin.h"
@@ -46,7 +46,6 @@ class Node3DEditorViewport;
 class SubViewportContainer;
 
 class EditorNode3DGizmo : public Node3DGizmo {
-
 	GDCLASS(EditorNode3DGizmo, Node3DGizmo);
 
 	bool selected;
@@ -57,7 +56,6 @@ public:
 	bool is_selected() const { return selected; }
 
 	struct Instance {
-
 		RID instance;
 		Ref<ArrayMesh> mesh;
 		Ref<Material> material;
@@ -68,7 +66,6 @@ public:
 		bool can_intersect;
 		bool extra_margin;
 		Instance() {
-
 			billboard = false;
 			unscaled = false;
 			can_intersect = false;
@@ -125,11 +122,11 @@ public:
 	bool intersect_frustum(const Camera3D *p_camera, const Vector<Plane> &p_frustum);
 	bool intersect_ray(Camera3D *p_camera, const Point2 &p_point, Vector3 &r_pos, Vector3 &r_normal, int *r_gizmo_handle = nullptr, bool p_sec_first = false);
 
-	virtual void clear();
-	virtual void create();
-	virtual void transform();
-	virtual void redraw();
-	virtual void free();
+	virtual void clear() override;
+	virtual void create() override;
+	virtual void transform() override;
+	virtual void redraw() override;
+	virtual void free() override;
 
 	virtual bool is_editable() const;
 
@@ -158,6 +155,7 @@ class ViewportRotationControl : public Control {
 	Node3DEditorViewport *viewport = nullptr;
 	Vector<Color> axis_colors;
 	Vector<int> axis_menu_options;
+	Vector2i orbiting_mouse_start;
 	bool orbiting = false;
 	int focused_axis = -2;
 
@@ -178,7 +176,6 @@ public:
 };
 
 class Node3DEditorViewport : public Control {
-
 	GDCLASS(Node3DEditorViewport, Control);
 	friend class Node3DEditor;
 	friend class ViewportRotationControl;
@@ -202,7 +199,7 @@ class Node3DEditorViewport : public Control {
 		VIEW_AUDIO_DOPPLER,
 		VIEW_GIZMOS,
 		VIEW_INFORMATION,
-		VIEW_FPS,
+		VIEW_FRAME_TIME,
 		VIEW_DISPLAY_NORMAL,
 		VIEW_DISPLAY_WIREFRAME,
 		VIEW_DISPLAY_OVERDRAW,
@@ -217,8 +214,11 @@ class Node3DEditorViewport : public Control {
 		VIEW_DISPLAY_DEBUG_GIPROBE_EMISSION,
 		VIEW_DISPLAY_DEBUG_SCENE_LUMINANCE,
 		VIEW_DISPLAY_DEBUG_SSAO,
-		VIEW_DISPLAY_DEBUG_ROUGHNESS_LIMITER,
 		VIEW_DISPLAY_DEBUG_PSSM_SPLITS,
+		VIEW_DISPLAY_DEBUG_DECAL_ATLAS,
+		VIEW_DISPLAY_DEBUG_SDFGI,
+		VIEW_DISPLAY_DEBUG_SDFGI_PROBES,
+		VIEW_DISPLAY_DEBUG_GI_BUFFER,
 		VIEW_LOCK_ROTATION,
 		VIEW_CINEMATIC_PREVIEW,
 		VIEW_AUTO_ORTHOGONAL,
@@ -229,7 +229,9 @@ public:
 	enum {
 		GIZMO_BASE_LAYER = 27,
 		GIZMO_EDIT_LAYER = 26,
-		GIZMO_GRID_LAYER = 25
+		GIZMO_GRID_LAYER = 25,
+
+		FRAME_TIME_HISTORY = 20,
 	};
 
 	enum NavigationScheme {
@@ -238,7 +240,18 @@ public:
 		NAVIGATION_MODO,
 	};
 
+	enum FreelookNavigationScheme {
+		FREELOOK_DEFAULT,
+		FREELOOK_PARTIALLY_AXIS_LOCKED,
+		FREELOOK_FULLY_AXIS_LOCKED,
+	};
+
 private:
+	float cpu_time_history[FRAME_TIME_HISTORY];
+	int cpu_time_history_index;
+	float gpu_time_history[FRAME_TIME_HISTORY];
+	int gpu_time_history_index;
+
 	int index;
 	String name;
 	void _menu_option(int p_option);
@@ -273,8 +286,8 @@ private:
 
 	bool freelook_active;
 	real_t freelook_speed;
+	Vector2 previous_mouse_position;
 
-	TextureRect *crosshair;
 	Label *info_label;
 	Label *cinema_label;
 	Label *locked_label;
@@ -284,7 +297,6 @@ private:
 	Label *fps_label;
 
 	struct _RayResult {
-
 		Node3D *item;
 		float depth;
 		int handle;
@@ -374,7 +386,6 @@ private:
 	} _edit;
 
 	struct Cursor {
-
 		Vector3 pos;
 		float x_rot, y_rot, distance;
 		Vector3 eye_pos; // Used in freelook mode
@@ -382,7 +393,9 @@ private:
 		Point2 region_begin, region_end;
 
 		Cursor() {
-			x_rot = y_rot = 0.5;
+			// These rotations place the camera in +X +Y +Z, aka south east, facing north west.
+			x_rot = 0.5;
+			y_rot = -0.5;
 			distance = 4;
 			region_select = false;
 		}
@@ -399,7 +412,7 @@ private:
 
 	real_t zoom_indicator_delay;
 
-	RID move_gizmo_instance[3], move_plane_gizmo_instance[3], rotate_gizmo_instance[3], scale_gizmo_instance[3], scale_plane_gizmo_instance[3];
+	RID move_gizmo_instance[3], move_plane_gizmo_instance[3], rotate_gizmo_instance[4], scale_gizmo_instance[3], scale_plane_gizmo_instance[3];
 
 	String last_message;
 	String message;
@@ -437,7 +450,7 @@ private:
 	Point2i _get_warped_mouse_motion(const Ref<InputEventMouseMotion> &p_ev_mouse_motion) const;
 
 	Vector3 _get_instance_position(const Point2 &p_pos) const;
-	static AABB _calculate_spatial_bounds(const Node3D *p_parent, bool p_exclude_toplevel_transform = true);
+	static AABB _calculate_spatial_bounds(const Node3D *p_parent, bool p_exclude_top_level_transform = true);
 	void _create_preview(const Vector<String> &files) const;
 	void _remove_preview();
 	bool _cyclical_dependency_exists(const String &p_target_scene_path, Node *p_desired_node);
@@ -475,7 +488,6 @@ public:
 };
 
 class Node3DEditorSelectedItem : public Object {
-
 	GDCLASS(Node3DEditorSelectedItem, Object);
 
 public:
@@ -495,7 +507,6 @@ public:
 };
 
 class Node3DEditorViewportContainer : public Container {
-
 	GDCLASS(Node3DEditorViewportContainer, Container);
 
 public:
@@ -536,7 +547,6 @@ public:
 };
 
 class Node3DEditor : public VBoxContainer {
-
 	GDCLASS(Node3DEditor, VBoxContainer);
 
 public:
@@ -590,11 +600,13 @@ private:
 	bool grid_enable[3]; //should be always visible if true
 	bool grid_enabled;
 
-	Ref<ArrayMesh> move_gizmo[3], move_plane_gizmo[3], rotate_gizmo[3], scale_gizmo[3], scale_plane_gizmo[3];
+	Ref<ArrayMesh> move_gizmo[3], move_plane_gizmo[3], rotate_gizmo[4], scale_gizmo[3], scale_plane_gizmo[3];
 	Ref<StandardMaterial3D> gizmo_color[3];
 	Ref<StandardMaterial3D> plane_gizmo_color[3];
+	Ref<ShaderMaterial> rotate_gizmo_color[3];
 	Ref<StandardMaterial3D> gizmo_color_hl[3];
 	Ref<StandardMaterial3D> plane_gizmo_color_hl[3];
+	Ref<ShaderMaterial> rotate_gizmo_color_hl[3];
 
 	int over_gizmo_handle;
 	float snap_translate_value;
@@ -614,7 +626,6 @@ private:
 	AABB preview_bounds;
 
 	struct Gizmo {
-
 		bool visible;
 		float scale;
 		Transform transform;
@@ -761,6 +772,7 @@ public:
 	Ref<ArrayMesh> get_scale_gizmo(int idx) const { return scale_gizmo[idx]; }
 	Ref<ArrayMesh> get_scale_plane_gizmo(int idx) const { return scale_plane_gizmo[idx]; }
 
+	void update_grid();
 	void update_transform_gizmo();
 	void update_all_gizmos(Node *p_node = nullptr);
 	void snap_selected_nodes_to_floor();
@@ -804,7 +816,6 @@ public:
 };
 
 class Node3DEditorPlugin : public EditorPlugin {
-
 	GDCLASS(Node3DEditorPlugin, EditorPlugin);
 
 	Node3DEditor *spatial_editor;
@@ -817,24 +828,23 @@ public:
 	void snap_cursor_to_plane(const Plane &p_plane);
 
 	Node3DEditor *get_spatial_editor() { return spatial_editor; }
-	virtual String get_name() const { return "3D"; }
-	bool has_main_screen() const { return true; }
-	virtual void make_visible(bool p_visible);
-	virtual void edit(Object *p_object);
-	virtual bool handles(Object *p_object) const;
+	virtual String get_name() const override { return "3D"; }
+	bool has_main_screen() const override { return true; }
+	virtual void make_visible(bool p_visible) override;
+	virtual void edit(Object *p_object) override;
+	virtual bool handles(Object *p_object) const override;
 
-	virtual Dictionary get_state() const;
-	virtual void set_state(const Dictionary &p_state);
-	virtual void clear() { spatial_editor->clear(); }
+	virtual Dictionary get_state() const override;
+	virtual void set_state(const Dictionary &p_state) override;
+	virtual void clear() override { spatial_editor->clear(); }
 
-	virtual void edited_scene_changed();
+	virtual void edited_scene_changed() override;
 
 	Node3DEditorPlugin(EditorNode *p_node);
 	~Node3DEditorPlugin();
 };
 
 class EditorNode3DGizmoPlugin : public Resource {
-
 	GDCLASS(EditorNode3DGizmoPlugin, Resource);
 
 public:
@@ -842,12 +852,11 @@ public:
 	static const int HIDDEN = 1;
 	static const int ON_TOP = 2;
 
-private:
+protected:
 	int current_state;
 	List<EditorNode3DGizmo *> current_gizmos;
 	HashMap<String, Vector<Ref<StandardMaterial3D>>> materials;
 
-protected:
 	static void _bind_methods();
 	virtual bool has_gizmo(Node3D *p_spatial);
 	virtual Ref<EditorNode3DGizmo> create_gizmo(Node3D *p_spatial);
@@ -881,4 +890,4 @@ public:
 	virtual ~EditorNode3DGizmoPlugin();
 };
 
-#endif
+#endif // NODE_3D_EDITOR_PLUGIN_H

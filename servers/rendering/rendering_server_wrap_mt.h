@@ -36,7 +36,6 @@
 #include "servers/rendering_server.h"
 
 class RenderingServerWrapMT : public RenderingServer {
-
 	// the real visual server
 	mutable RenderingServer *rendering_server;
 
@@ -80,24 +79,24 @@ public:
 	//these go pass-through, as they can be called from any thread
 	virtual RID texture_2d_create(const Ref<Image> &p_image) { return rendering_server->texture_2d_create(p_image); }
 	virtual RID texture_2d_layered_create(const Vector<Ref<Image>> &p_layers, TextureLayeredType p_layered_type) { return rendering_server->texture_2d_layered_create(p_layers, p_layered_type); }
-	virtual RID texture_3d_create(const Vector<Ref<Image>> &p_slices) { return rendering_server->texture_3d_create(p_slices); }
+	virtual RID texture_3d_create(Image::Format p_format, int p_width, int p_height, int p_depth, bool p_mipmaps, const Vector<Ref<Image>> &p_data) { return rendering_server->texture_3d_create(p_format, p_width, p_height, p_depth, p_mipmaps, p_data); }
 	virtual RID texture_proxy_create(RID p_base) { return rendering_server->texture_proxy_create(p_base); }
 
 	//goes pass-through
 	virtual void texture_2d_update_immediate(RID p_texture, const Ref<Image> &p_image, int p_layer = 0) { rendering_server->texture_2d_update_immediate(p_texture, p_image, p_layer); }
 	//these go through command queue if they are in another thread
 	FUNC3(texture_2d_update, RID, const Ref<Image> &, int)
-	FUNC4(texture_3d_update, RID, const Ref<Image> &, int, int)
+	FUNC2(texture_3d_update, RID, const Vector<Ref<Image>> &)
 	FUNC2(texture_proxy_update, RID, RID)
 
 	//these also go pass-through
 	virtual RID texture_2d_placeholder_create() { return rendering_server->texture_2d_placeholder_create(); }
-	virtual RID texture_2d_layered_placeholder_create() { return rendering_server->texture_2d_layered_placeholder_create(); }
+	virtual RID texture_2d_layered_placeholder_create(TextureLayeredType p_type) { return rendering_server->texture_2d_layered_placeholder_create(p_type); }
 	virtual RID texture_3d_placeholder_create() { return rendering_server->texture_3d_placeholder_create(); }
 
 	FUNC1RC(Ref<Image>, texture_2d_get, RID)
 	FUNC2RC(Ref<Image>, texture_2d_layer_get, RID, int)
-	FUNC3RC(Ref<Image>, texture_3d_slice_get, RID, int, int)
+	FUNC1RC(Vector<Ref<Image>>, texture_3d_get, RID)
 
 	FUNC2(texture_replace, RID, RID)
 
@@ -238,7 +237,8 @@ public:
 	FUNC2(light_set_negative, RID, bool)
 	FUNC2(light_set_cull_mask, RID, uint32_t)
 	FUNC2(light_set_reverse_cull_face_mode, RID, bool)
-	FUNC2(light_set_use_gi, RID, bool)
+	FUNC2(light_set_bake_mode, RID, LightBakeMode)
+	FUNC2(light_set_max_sdfgi_cascade, RID, uint32_t)
 
 	FUNC2(light_omni_set_shadow_mode, RID, LightOmniShadowMode)
 
@@ -252,9 +252,9 @@ public:
 
 	FUNC2(reflection_probe_set_update_mode, RID, ReflectionProbeUpdateMode)
 	FUNC2(reflection_probe_set_intensity, RID, float)
-	FUNC2(reflection_probe_set_interior_ambient, RID, const Color &)
-	FUNC2(reflection_probe_set_interior_ambient_energy, RID, float)
-	FUNC2(reflection_probe_set_interior_ambient_probe_contribution, RID, float)
+	FUNC2(reflection_probe_set_ambient_color, RID, const Color &)
+	FUNC2(reflection_probe_set_ambient_energy, RID, float)
+	FUNC2(reflection_probe_set_ambient_mode, RID, ReflectionProbeAmbientMode)
 	FUNC2(reflection_probe_set_max_distance, RID, float)
 	FUNC2(reflection_probe_set_extents, RID, const Vector3 &)
 	FUNC2(reflection_probe_set_origin_offset, RID, const Vector3 &)
@@ -263,6 +263,20 @@ public:
 	FUNC2(reflection_probe_set_enable_shadows, RID, bool)
 	FUNC2(reflection_probe_set_cull_mask, RID, uint32_t)
 	FUNC2(reflection_probe_set_resolution, RID, int)
+
+	/* DECAL API */
+
+	FUNCRID(decal)
+
+	FUNC2(decal_set_extents, RID, const Vector3 &)
+	FUNC3(decal_set_texture, RID, DecalTexture, RID)
+	FUNC2(decal_set_emission_energy, RID, float)
+	FUNC2(decal_set_albedo_mix, RID, float)
+	FUNC2(decal_set_modulate, RID, const Color &)
+	FUNC2(decal_set_cull_mask, RID, uint32_t)
+	FUNC4(decal_set_distance_fade, RID, bool, float, float)
+	FUNC3(decal_set_fade, RID, float, float)
+	FUNC2(decal_set_normal_fade, RID, float)
 
 	/* BAKED LIGHT API */
 
@@ -308,21 +322,21 @@ public:
 	FUNC2(gi_probe_set_anisotropy_strength, RID, float)
 	FUNC1RC(float, gi_probe_get_anisotropy_strength, RID)
 
+	FUNC1(gi_probe_set_quality, GIProbeQuality)
+
 	/* LIGHTMAP CAPTURE */
 
-	FUNCRID(lightmap_capture)
+	FUNCRID(lightmap)
+	FUNC3(lightmap_set_textures, RID, RID, bool)
+	FUNC2(lightmap_set_probe_bounds, RID, const AABB &)
+	FUNC2(lightmap_set_probe_interior, RID, bool)
+	FUNC5(lightmap_set_probe_capture_data, RID, const PackedVector3Array &, const PackedColorArray &, const PackedInt32Array &, const PackedInt32Array &)
+	FUNC1RC(PackedVector3Array, lightmap_get_probe_capture_points, RID)
+	FUNC1RC(PackedColorArray, lightmap_get_probe_capture_sh, RID)
+	FUNC1RC(PackedInt32Array, lightmap_get_probe_capture_tetrahedra, RID)
+	FUNC1RC(PackedInt32Array, lightmap_get_probe_capture_bsp_tree, RID)
 
-	FUNC2(lightmap_capture_set_bounds, RID, const AABB &)
-	FUNC1RC(AABB, lightmap_capture_get_bounds, RID)
-
-	FUNC2(lightmap_capture_set_octree, RID, const Vector<uint8_t> &)
-	FUNC1RC(Vector<uint8_t>, lightmap_capture_get_octree, RID)
-	FUNC2(lightmap_capture_set_octree_cell_transform, RID, const Transform &)
-	FUNC1RC(Transform, lightmap_capture_get_octree_cell_transform, RID)
-	FUNC2(lightmap_capture_set_octree_cell_subdiv, RID, int)
-	FUNC1RC(int, lightmap_capture_get_octree_cell_subdiv, RID)
-	FUNC2(lightmap_capture_set_energy, RID, float)
-	FUNC1RC(float, lightmap_capture_get_energy, RID)
+	FUNC1(lightmap_set_probe_capture_update_speed, float)
 
 	/* PARTICLES */
 
@@ -342,17 +356,37 @@ public:
 	FUNC2(particles_set_process_material, RID, RID)
 	FUNC2(particles_set_fixed_fps, RID, int)
 	FUNC2(particles_set_fractional_delta, RID, bool)
+	FUNC2(particles_set_collision_base_size, RID, float)
+
 	FUNC1R(bool, particles_is_inactive, RID)
 	FUNC1(particles_request_process, RID)
 	FUNC1(particles_restart, RID)
+
+	FUNC6(particles_emit, RID, const Transform &, const Vector3 &, const Color &, const Color &, uint32_t)
 
 	FUNC2(particles_set_draw_order, RID, RS::ParticlesDrawOrder)
 
 	FUNC2(particles_set_draw_passes, RID, int)
 	FUNC3(particles_set_draw_pass_mesh, RID, int, RID)
 	FUNC2(particles_set_emission_transform, RID, const Transform &)
+	FUNC2(particles_set_subemitter, RID, RID)
 
 	FUNC1R(AABB, particles_get_current_aabb, RID)
+
+	/* PARTICLES COLLISION */
+
+	FUNCRID(particles_collision)
+
+	FUNC2(particles_collision_set_collision_type, RID, ParticlesCollisionType)
+	FUNC2(particles_collision_set_cull_mask, RID, uint32_t)
+	FUNC2(particles_collision_set_sphere_radius, RID, float)
+	FUNC2(particles_collision_set_box_extents, RID, const Vector3 &)
+	FUNC2(particles_collision_set_attractor_strength, RID, float)
+	FUNC2(particles_collision_set_attractor_directionality, RID, float)
+	FUNC2(particles_collision_set_attractor_attenuation, RID, float)
+	FUNC2(particles_collision_set_field_texture, RID, RID)
+	FUNC1(particles_collision_height_field_update, RID)
+	FUNC2(particles_collision_set_height_field_resolution, RID, ParticlesCollisionHeightfieldResolution)
 
 	/* CAMERA API */
 
@@ -397,12 +431,19 @@ public:
 	FUNC2(viewport_remove_canvas, RID, RID)
 	FUNC3(viewport_set_canvas_transform, RID, RID, const Transform2D &)
 	FUNC2(viewport_set_transparent_background, RID, bool)
+	FUNC2(viewport_set_snap_2d_transforms_to_pixel, RID, bool)
+	FUNC2(viewport_set_snap_2d_vertices_to_pixel, RID, bool)
+
+	FUNC2(viewport_set_default_canvas_item_texture_filter, RID, CanvasItemTextureFilter)
+	FUNC2(viewport_set_default_canvas_item_texture_repeat, RID, CanvasItemTextureRepeat)
 
 	FUNC2(viewport_set_global_canvas_transform, RID, const Transform2D &)
 	FUNC4(viewport_set_canvas_stacking, RID, RID, int, int)
 	FUNC2(viewport_set_shadow_atlas_size, RID, int)
 	FUNC3(viewport_set_shadow_atlas_quadrant_subdivision, RID, int, int)
 	FUNC2(viewport_set_msaa, RID, ViewportMSAA)
+	FUNC2(viewport_set_screen_space_aa, RID, ViewportScreenSpaceAA)
+	FUNC2(viewport_set_use_debanding, RID, bool)
 
 	//this passes directly to avoid stalling, but it's pretty dangerous, so don't call after freeing a viewport
 	virtual int viewport_get_render_info(RID p_viewport, ViewportRenderInfo p_info) {
@@ -410,6 +451,14 @@ public:
 	}
 
 	FUNC2(viewport_set_debug_draw, RID, ViewportDebugDraw)
+
+	FUNC2(viewport_set_measure_render_time, RID, bool)
+	virtual float viewport_get_measured_render_time_cpu(RID p_viewport) const {
+		return rendering_server->viewport_get_measured_render_time_cpu(p_viewport);
+	}
+	virtual float viewport_get_measured_render_time_gpu(RID p_viewport) const {
+		return rendering_server->viewport_get_measured_render_time_gpu(p_viewport);
+	}
 
 	FUNC1(directional_shadow_atlas_set_size, int)
 
@@ -419,6 +468,7 @@ public:
 	FUNC2(sky_set_radiance_size, RID, int)
 	FUNC2(sky_set_mode, RID, SkyMode)
 	FUNC2(sky_set_material, RID, RID)
+	FUNC4R(Ref<Image>, sky_bake_panorama, RID, float, bool, const Size2i &)
 
 	/* ENVIRONMENT API */
 
@@ -444,18 +494,30 @@ public:
 
 	FUNC2(environment_set_ssao_quality, EnvironmentSSAOQuality, bool)
 
-	FUNC11(environment_set_glow, RID, bool, int, float, float, float, float, EnvironmentGlowBlendMode, float, float, float)
+	FUNC11(environment_set_sdfgi, RID, bool, EnvironmentSDFGICascades, float, EnvironmentSDFGIYScale, bool, bool, bool, float, float, float)
+	FUNC1(environment_set_sdfgi_ray_count, EnvironmentSDFGIRayCount)
+	FUNC1(environment_set_sdfgi_frames_to_converge, EnvironmentSDFGIFramesToConverge)
+
+	FUNC11(environment_set_glow, RID, bool, Vector<float>, float, float, float, float, EnvironmentGlowBlendMode, float, float, float)
 	FUNC1(environment_glow_set_use_bicubic_upscale, bool)
+	FUNC1(environment_glow_set_use_high_quality, bool)
 
 	FUNC9(environment_set_tonemap, RID, EnvironmentToneMapper, float, float, bool, float, float, float, float)
 
 	FUNC6(environment_set_adjustment, RID, bool, float, float, float, RID)
 
-	FUNC5(environment_set_fog, RID, bool, const Color &, const Color &, float)
-	FUNC7(environment_set_fog_depth, RID, bool, float, float, float, bool, float)
-	FUNC5(environment_set_fog_height, RID, bool, float, float, float)
+	FUNC9(environment_set_fog, RID, bool, const Color &, float, float, float, float, float, float)
 
-	FUNC2(screen_space_roughness_limiter_set_active, bool, float)
+	FUNC9(environment_set_volumetric_fog, RID, bool, float, const Color &, float, float, float, float, EnvVolumetricFogShadowFilter)
+
+	FUNC2(environment_set_volumetric_fog_volume_size, int, int)
+	FUNC1(environment_set_volumetric_fog_filter_active, bool)
+	FUNC1(environment_set_volumetric_fog_directional_shadow_shrink_size, int)
+	FUNC1(environment_set_volumetric_fog_positional_shadow_shrink_size, int)
+
+	FUNC3R(Ref<Image>, environment_bake_panorama, RID, bool, const Size2i &)
+
+	FUNC3(screen_space_roughness_limiter_set_active, bool, float, float)
 	FUNC1(sub_surface_scattering_set_quality, SubSurfaceScatteringQuality)
 	FUNC2(sub_surface_scattering_set_scale, float, float)
 
@@ -467,7 +529,8 @@ public:
 	FUNC8(camera_effects_set_dof_blur, RID, bool, float, float, bool, float, float, float)
 	FUNC3(camera_effects_set_custom_exposure, RID, bool, float)
 
-	FUNC1(shadow_filter_set, ShadowFilter)
+	FUNC1(shadows_quality_set, ShadowQuality);
+	FUNC1(directional_shadow_quality_set, ShadowQuality);
 
 	FUNCRID(scenario)
 
@@ -487,7 +550,6 @@ public:
 	FUNC3(instance_set_blend_shape_weight, RID, int, float)
 	FUNC3(instance_set_surface_material, RID, int, RID)
 	FUNC2(instance_set_visible, RID, bool)
-	FUNC3(instance_set_use_lightmap, RID, RID, RID)
 
 	FUNC2(instance_set_custom_aabb, RID, AABB)
 
@@ -507,6 +569,16 @@ public:
 
 	FUNC5(instance_geometry_set_draw_range, RID, float, float, float, float)
 	FUNC2(instance_geometry_set_as_instance_lod, RID, RID)
+	FUNC4(instance_geometry_set_lightmap, RID, RID, const Rect2 &, int)
+
+	FUNC3(instance_geometry_set_shader_parameter, RID, const StringName &, const Variant &)
+	FUNC2RC(Variant, instance_geometry_get_shader_parameter, RID, const StringName &)
+	FUNC2RC(Variant, instance_geometry_get_shader_parameter_default_value, RID, const StringName &)
+	FUNC2SC(instance_geometry_get_shader_parameter_list, RID, List<PropertyInfo> *)
+
+	/* BAKE */
+
+	FUNC3R(TypedArray<Image>, bake_render_uv2, RID, const Vector<RID> &, const Size2i &)
 
 	/* CANVAS (2D) */
 
@@ -516,8 +588,18 @@ public:
 	FUNC3(canvas_set_parent, RID, RID, float)
 	FUNC1(canvas_set_disable_scale, bool)
 
+	FUNCRID(canvas_texture)
+	FUNC3(canvas_texture_set_channel, RID, CanvasTextureChannel, RID)
+	FUNC3(canvas_texture_set_shading_parameters, RID, const Color &, float)
+
+	FUNC2(canvas_texture_set_texture_filter, RID, CanvasItemTextureFilter)
+	FUNC2(canvas_texture_set_texture_repeat, RID, CanvasItemTextureRepeat)
+
 	FUNCRID(canvas_item)
 	FUNC2(canvas_item_set_parent, RID, RID)
+
+	FUNC2(canvas_item_set_default_texture_filter, RID, CanvasItemTextureFilter)
+	FUNC2(canvas_item_set_default_texture_repeat, RID, CanvasItemTextureRepeat)
 
 	FUNC2(canvas_item_set_visible, RID, bool)
 	FUNC2(canvas_item_set_light_mask, RID, int)
@@ -533,23 +615,20 @@ public:
 
 	FUNC2(canvas_item_set_draw_behind_parent, RID, bool)
 
-	FUNC2(canvas_item_set_default_texture_filter, RID, CanvasItemTextureFilter)
-	FUNC2(canvas_item_set_default_texture_repeat, RID, CanvasItemTextureRepeat)
-
 	FUNC5(canvas_item_add_line, RID, const Point2 &, const Point2 &, const Color &, float)
 	FUNC4(canvas_item_add_polyline, RID, const Vector<Point2> &, const Vector<Color> &, float)
 	FUNC4(canvas_item_add_multiline, RID, const Vector<Point2> &, const Vector<Color> &, float)
 	FUNC3(canvas_item_add_rect, RID, const Rect2 &, const Color &)
 	FUNC4(canvas_item_add_circle, RID, const Point2 &, float, const Color &)
-	FUNC11(canvas_item_add_texture_rect, RID, const Rect2 &, RID, bool, const Color &, bool, RID, RID, const Color &, CanvasItemTextureFilter, CanvasItemTextureRepeat)
-	FUNC12(canvas_item_add_texture_rect_region, RID, const Rect2 &, RID, const Rect2 &, const Color &, bool, RID, RID, const Color &, bool, CanvasItemTextureFilter, CanvasItemTextureRepeat)
-	FUNC15(canvas_item_add_nine_patch, RID, const Rect2 &, const Rect2 &, RID, const Vector2 &, const Vector2 &, NinePatchAxisMode, NinePatchAxisMode, bool, const Color &, RID, RID, const Color &, CanvasItemTextureFilter, CanvasItemTextureRepeat)
-	FUNC11(canvas_item_add_primitive, RID, const Vector<Point2> &, const Vector<Color> &, const Vector<Point2> &, RID, float, RID, RID, const Color &, CanvasItemTextureFilter, CanvasItemTextureRepeat)
-	FUNC10(canvas_item_add_polygon, RID, const Vector<Point2> &, const Vector<Color> &, const Vector<Point2> &, RID, RID, RID, const Color &, CanvasItemTextureFilter, CanvasItemTextureRepeat)
-	FUNC14(canvas_item_add_triangle_array, RID, const Vector<int> &, const Vector<Point2> &, const Vector<Color> &, const Vector<Point2> &, const Vector<int> &, const Vector<float> &, RID, int, RID, RID, const Color &, CanvasItemTextureFilter, CanvasItemTextureRepeat)
-	FUNC10(canvas_item_add_mesh, RID, const RID &, const Transform2D &, const Color &, RID, RID, RID, const Color &, CanvasItemTextureFilter, CanvasItemTextureRepeat)
-	FUNC8(canvas_item_add_multimesh, RID, RID, RID, RID, RID, const Color &, CanvasItemTextureFilter, CanvasItemTextureRepeat)
-	FUNC8(canvas_item_add_particles, RID, RID, RID, RID, RID, const Color &, CanvasItemTextureFilter, CanvasItemTextureRepeat)
+	FUNC6(canvas_item_add_texture_rect, RID, const Rect2 &, RID, bool, const Color &, bool)
+	FUNC7(canvas_item_add_texture_rect_region, RID, const Rect2 &, RID, const Rect2 &, const Color &, bool, bool)
+	FUNC10(canvas_item_add_nine_patch, RID, const Rect2 &, const Rect2 &, RID, const Vector2 &, const Vector2 &, NinePatchAxisMode, NinePatchAxisMode, bool, const Color &)
+	FUNC6(canvas_item_add_primitive, RID, const Vector<Point2> &, const Vector<Color> &, const Vector<Point2> &, RID, float)
+	FUNC5(canvas_item_add_polygon, RID, const Vector<Point2> &, const Vector<Color> &, const Vector<Point2> &, RID)
+	FUNC9(canvas_item_add_triangle_array, RID, const Vector<int> &, const Vector<Point2> &, const Vector<Color> &, const Vector<Point2> &, const Vector<int> &, const Vector<float> &, RID, int)
+	FUNC5(canvas_item_add_mesh, RID, const RID &, const Transform2D &, const Color &, RID)
+	FUNC3(canvas_item_add_multimesh, RID, RID, RID)
+	FUNC3(canvas_item_add_particles, RID, RID, RID)
 	FUNC2(canvas_item_add_set_transform, RID, const Transform2D &)
 	FUNC2(canvas_item_add_clip_ignore, RID, bool)
 	FUNC2(canvas_item_set_sort_children_by_y, RID, bool)
@@ -565,10 +644,15 @@ public:
 
 	FUNC2(canvas_item_set_use_parent_material, RID, bool)
 
+	FUNC6(canvas_item_set_canvas_group_mode, RID, CanvasGroupMode, float, bool, float, bool)
+
 	FUNC0R(RID, canvas_light_create)
+
+	FUNC2(canvas_light_set_mode, RID, CanvasLightMode)
+
 	FUNC2(canvas_light_attach_to_canvas, RID, RID)
 	FUNC2(canvas_light_set_enabled, RID, bool)
-	FUNC2(canvas_light_set_scale, RID, float)
+	FUNC2(canvas_light_set_texture_scale, RID, float)
 	FUNC2(canvas_light_set_transform, RID, const Transform2D &)
 	FUNC2(canvas_light_set_texture, RID, RID)
 	FUNC2(canvas_light_set_texture_offset, RID, const Vector2 &)
@@ -579,11 +663,11 @@ public:
 	FUNC3(canvas_light_set_layer_range, RID, int, int)
 	FUNC2(canvas_light_set_item_cull_mask, RID, int)
 	FUNC2(canvas_light_set_item_shadow_cull_mask, RID, int)
+	FUNC2(canvas_light_set_directional_distance, RID, float)
 
-	FUNC2(canvas_light_set_mode, RID, CanvasLightMode)
+	FUNC2(canvas_light_set_blend_mode, RID, CanvasLightBlendMode)
 
 	FUNC2(canvas_light_set_shadow_enabled, RID, bool)
-	FUNC2(canvas_light_set_shadow_buffer_size, RID, int)
 	FUNC2(canvas_light_set_shadow_filter, RID, CanvasLightShadowFilter)
 	FUNC2(canvas_light_set_shadow_color, RID, const Color &)
 	FUNC2(canvas_light_set_shadow_smooth, RID, float)
@@ -600,6 +684,20 @@ public:
 	FUNC2(canvas_occluder_polygon_set_shape_as_lines, RID, const Vector<Vector2> &)
 
 	FUNC2(canvas_occluder_polygon_set_cull_mode, RID, CanvasOccluderPolygonCullMode)
+
+	FUNC1(canvas_set_shadow_texture_size, int)
+
+	/* GLOBAL VARIABLES */
+
+	FUNC3(global_variable_add, const StringName &, GlobalVariableType, const Variant &)
+	FUNC1(global_variable_remove, const StringName &)
+	FUNC0RC(Vector<StringName>, global_variable_get_list)
+	FUNC2(global_variable_set, const StringName &, const Variant &)
+	FUNC2(global_variable_set_override, const StringName &, const Variant &)
+	FUNC1RC(GlobalVariableType, global_variable_get_type, const StringName &)
+	FUNC1RC(Variant, global_variable_get, const StringName &)
+	FUNC1(global_variables_load_settings, bool)
+	FUNC0(global_variables_clear)
 
 	/* BLACK BARS */
 
@@ -667,6 +765,10 @@ public:
 
 	virtual Vector<FrameProfileArea> get_frame_profile() {
 		return rendering_server->get_frame_profile();
+	}
+
+	virtual void sdfgi_set_debug_probe_select(const Vector3 &p_position, const Vector3 &p_dir) {
+		rendering_server->sdfgi_set_debug_probe_select(p_position, p_dir);
 	}
 
 	RenderingServerWrapMT(RenderingServer *p_contained, bool p_create_thread);

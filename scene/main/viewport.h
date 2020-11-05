@@ -51,7 +51,6 @@ class Viewport;
 class CollisionObject3D;
 
 class ViewportTexture : public Texture2D {
-
 	GDCLASS(ViewportTexture, Texture2D);
 
 	NodePath path;
@@ -69,23 +68,22 @@ public:
 	void set_viewport_path_in_scene(const NodePath &p_path);
 	NodePath get_viewport_path_in_scene() const;
 
-	virtual void setup_local_to_scene();
+	virtual void setup_local_to_scene() override;
 
-	virtual int get_width() const;
-	virtual int get_height() const;
-	virtual Size2 get_size() const;
-	virtual RID get_rid() const;
+	virtual int get_width() const override;
+	virtual int get_height() const override;
+	virtual Size2 get_size() const override;
+	virtual RID get_rid() const override;
 
-	virtual bool has_alpha() const;
+	virtual bool has_alpha() const override;
 
-	virtual Ref<Image> get_data() const;
+	virtual Ref<Image> get_data() const override;
 
 	ViewportTexture();
 	~ViewportTexture();
 };
 
 class Viewport : public Node {
-
 	GDCLASS(Viewport, Node);
 
 public:
@@ -106,10 +104,16 @@ public:
 		MSAA_4X,
 		MSAA_8X,
 		MSAA_16X,
+		MSAA_MAX
+	};
+
+	enum ScreenSpaceAA {
+		SCREEN_SPACE_AA_DISABLED,
+		SCREEN_SPACE_AA_FXAA,
+		SCREEN_SPACE_AA_MAX
 	};
 
 	enum RenderInfo {
-
 		RENDER_INFO_OBJECTS_IN_FRAME,
 		RENDER_INFO_VERTICES_IN_FRAME,
 		RENDER_INFO_MATERIAL_CHANGES_IN_FRAME,
@@ -133,8 +137,11 @@ public:
 		DEBUG_DRAW_DIRECTIONAL_SHADOW_ATLAS,
 		DEBUG_DRAW_SCENE_LUMINANCE,
 		DEBUG_DRAW_SSAO,
-		DEBUG_DRAW_ROUGHNESS_LIMITER,
-		DEBUG_DRAW_PSSM_SPLITS
+		DEBUG_DRAW_PSSM_SPLITS,
+		DEBUG_DRAW_DECAL_ATLAS,
+		DEBUG_DRAW_SDFGI,
+		DEBUG_DRAW_SDFGI_PROBES,
+		DEBUG_DRAW_GI_BUFFER,
 	};
 
 	enum DefaultCanvasItemTextureFilter {
@@ -218,6 +225,8 @@ private:
 	bool gen_mipmaps;
 
 	bool snap_controls_to_pixels;
+	bool snap_2d_transforms_to_pixel;
+	bool snap_2d_vertices_to_pixel;
 
 	bool physics_object_picking;
 	List<Ref<InputEvent>> physics_picking_events;
@@ -229,7 +238,6 @@ private:
 	bool physics_has_last_mousepos;
 	Vector2 physics_last_mousepos;
 	struct {
-
 		bool alt;
 		bool control;
 		bool shift;
@@ -246,8 +254,8 @@ private:
 	Map<ObjectID, uint64_t> physics_2d_mouseover;
 
 	Ref<World2D> world_2d;
-	Ref<World3D> world;
-	Ref<World3D> own_world;
+	Ref<World3D> world_3d;
+	Ref<World3D> own_world_3d;
 
 	Rect2i to_screen_rect;
 	StringName input_group;
@@ -272,6 +280,8 @@ private:
 	ShadowAtlasQuadrantSubdiv shadow_atlas_quadrant_subdiv[4];
 
 	MSAA msaa;
+	ScreenSpaceAA screen_space_aa;
+	bool use_debanding = false;
 	Ref<ViewportTexture> default_texture;
 	Set<ViewportTexture *> viewport_textures;
 
@@ -313,7 +323,7 @@ private:
 		Control *mouse_over;
 		Control *drag_mouse_over;
 		Vector2 drag_mouse_over_pos;
-		Control *tooltip;
+		Control *tooltip_control;
 		Window *tooltip_popup;
 		Label *tooltip_label;
 		Point2 tooltip_pos;
@@ -349,9 +359,6 @@ private:
 	DefaultCanvasItemTextureFilter default_canvas_item_texture_filter;
 	DefaultCanvasItemTextureRepeat default_canvas_item_texture_repeat;
 
-	void _propagate_update_default_filter(Node *p_node);
-	void _propagate_update_default_repeat(Node *p_node);
-
 	bool disable_input;
 
 	void _gui_call_input(Control *p_control, const Ref<InputEvent> &p_input);
@@ -375,16 +382,17 @@ private:
 
 	void _gui_remove_root_control(List<Control *>::Element *RI);
 
-	String _gui_get_tooltip(Control *p_control, const Vector2 &p_pos, Control **r_which = nullptr);
+	String _gui_get_tooltip(Control *p_control, const Vector2 &p_pos, Control **r_tooltip_owner = nullptr);
 	void _gui_cancel_tooltip();
 	void _gui_show_tooltip();
 
 	void _gui_remove_control(Control *p_control);
-	void _gui_hid_control(Control *p_control);
+	void _gui_hide_control(Control *p_control);
 
 	void _gui_force_drag(Control *p_base, const Variant &p_data, Control *p_control);
 	void _gui_set_drag_preview(Control *p_base, Control *p_control);
 
+	void _gui_remove_focus_for_window(Node *p_window);
 	void _gui_remove_focus();
 	void _gui_unfocus_control(Control *p_control);
 	bool _gui_control_has_focus(const Control *p_control);
@@ -422,7 +430,7 @@ private:
 
 	void _gui_set_root_order_dirty();
 
-	void _own_world_changed();
+	void _own_world_3d_changed();
 
 	friend class Window;
 
@@ -434,6 +442,9 @@ private:
 	bool _sub_windows_forward_input(const Ref<InputEvent> &p_event);
 	SubWindowResize _sub_window_get_resize_margin(Window *p_subwindow, const Point2 &p_point);
 
+	virtual bool _can_consume_input_events() const { return true; }
+	uint64_t event_count = 0;
+
 protected:
 	void _set_size(const Size2i &p_size, const Size2i &p_size_2d_override, const Rect2i &p_to_screen_rect, const Transform2D &p_stretch_transform, bool p_allocated);
 
@@ -443,9 +454,11 @@ protected:
 
 	void _notification(int p_what);
 	static void _bind_methods();
-	virtual void _validate_property(PropertyInfo &property) const;
+	virtual void _validate_property(PropertyInfo &property) const override;
 
 public:
+	uint64_t get_processed_events_count() const { return event_count; }
+
 	Listener3D *get_listener() const;
 	Camera3D *get_camera() const;
 
@@ -469,10 +482,10 @@ public:
 	Rect2 get_visible_rect() const;
 	RID get_viewport_rid() const;
 
-	void set_world(const Ref<World3D> &p_world);
+	void set_world_3d(const Ref<World3D> &p_world_3d);
 	void set_world_2d(const Ref<World2D> &p_world_2d);
-	Ref<World3D> get_world() const;
-	Ref<World3D> find_world() const;
+	Ref<World3D> get_world_3d() const;
+	Ref<World3D> find_world_3d() const;
 
 	Ref<World2D> get_world_2d() const;
 	Ref<World2D> find_world_2d() const;
@@ -505,11 +518,17 @@ public:
 	void set_msaa(MSAA p_msaa);
 	MSAA get_msaa() const;
 
+	void set_screen_space_aa(ScreenSpaceAA p_screen_space_aa);
+	ScreenSpaceAA get_screen_space_aa() const;
+
+	void set_use_debanding(bool p_use_debanding);
+	bool is_using_debanding() const;
+
 	Vector2 get_camera_coords(const Vector2 &p_viewport_coords) const;
 	Vector2 get_camera_rect_size() const;
 
-	void set_use_own_world(bool p_world);
-	bool is_using_own_world() const;
+	void set_use_own_world_3d(bool p_world_3d);
+	bool is_using_own_world_3d() const;
 
 	void input_text(const String &p_text);
 	void input(const Ref<InputEvent> &p_event, bool p_local_coords = false);
@@ -529,7 +548,7 @@ public:
 	void gui_reset_canvas_sort_index();
 	int gui_get_canvas_sort_index();
 
-	virtual String get_configuration_warning() const;
+	virtual String get_configuration_warning() const override;
 
 	void set_debug_draw(DebugDraw p_debug_draw);
 	DebugDraw get_debug_draw() const;
@@ -538,6 +557,12 @@ public:
 
 	void set_snap_controls_to_pixels(bool p_enable);
 	bool is_snap_controls_to_pixels_enabled() const;
+
+	void set_snap_2d_transforms_to_pixel(bool p_enable);
+	bool is_snap_2d_transforms_to_pixel_enabled() const;
+
+	void set_snap_2d_vertices_to_pixel(bool p_enable);
+	bool is_snap_2d_vertices_to_pixel_enabled() const;
 
 	void set_input_as_handled();
 	bool is_input_handled() const;
@@ -560,6 +585,7 @@ public:
 	bool is_embedding_subwindows() const;
 
 	Viewport *get_parent_viewport() const;
+	Window *get_base_window() const;
 
 	void pass_mouse_focus_to(Viewport *p_viewport, Control *p_control);
 
@@ -568,7 +594,6 @@ public:
 };
 
 class SubViewport : public Viewport {
-
 	GDCLASS(SubViewport, Viewport);
 
 public:
@@ -595,7 +620,7 @@ private:
 
 protected:
 	static void _bind_methods();
-	virtual DisplayServer::WindowID get_window_id() const;
+	virtual DisplayServer::WindowID get_window_id() const override;
 	Transform2D _stretch_transform();
 	void _notification(int p_what);
 
@@ -624,6 +649,7 @@ public:
 VARIANT_ENUM_CAST(SubViewport::UpdateMode);
 VARIANT_ENUM_CAST(Viewport::ShadowAtlasQuadrantSubdiv);
 VARIANT_ENUM_CAST(Viewport::MSAA);
+VARIANT_ENUM_CAST(Viewport::ScreenSpaceAA);
 VARIANT_ENUM_CAST(Viewport::DebugDraw);
 VARIANT_ENUM_CAST(SubViewport::ClearMode);
 VARIANT_ENUM_CAST(Viewport::RenderInfo);

@@ -124,7 +124,6 @@ private:
 		const Particle *particles;
 		Vector2 axis;
 		bool operator()(int p_a, int p_b) const {
-
 			return axis.dot(particles[p_a].transform[2]) < axis.dot(particles[p_b].transform[2]);
 		}
 	};
@@ -148,7 +147,6 @@ private:
 	DrawOrder draw_order;
 
 	Ref<Texture2D> texture;
-	Ref<Texture2D> normalmap;
 
 	////////
 
@@ -191,7 +189,7 @@ private:
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
-	virtual void _validate_property(PropertyInfo &property) const;
+	virtual void _validate_property(PropertyInfo &property) const override;
 
 public:
 	void set_emitting(bool p_emitting);
@@ -232,9 +230,6 @@ public:
 
 	void set_texture(const Ref<Texture2D> &p_texture);
 	Ref<Texture2D> get_texture() const;
-
-	void set_normalmap(const Ref<Texture2D> &p_normalmap);
-	Ref<Texture2D> get_normalmap() const;
 
 	///////////////////
 
@@ -281,7 +276,7 @@ public:
 	void set_gravity(const Vector2 &p_gravity);
 	Vector2 get_gravity() const;
 
-	virtual String get_configuration_warning() const;
+	virtual String get_configuration_warning() const override;
 
 	void restart();
 

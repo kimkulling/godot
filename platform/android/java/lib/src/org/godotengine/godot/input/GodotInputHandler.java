@@ -32,24 +32,26 @@ package org.godotengine.godot.input;
 
 import static org.godotengine.godot.utils.GLUtils.DEBUG;
 
+import org.godotengine.godot.GodotLib;
+import org.godotengine.godot.GodotRenderView;
+import org.godotengine.godot.input.InputManagerCompat.InputDeviceListener;
+
+import android.os.Build;
 import android.util.Log;
 import android.view.InputDevice;
 import android.view.InputDevice.MotionRange;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import org.godotengine.godot.GodotLib;
-import org.godotengine.godot.GodotRenderView;
-import org.godotengine.godot.input.InputManagerCompat.InputDeviceListener;
 
 /**
  * Handles input related events for the {@link GodotRenderView} view.
  */
 public class GodotInputHandler implements InputDeviceListener {
-
 	private final ArrayList<Joystick> mJoysticksDevices = new ArrayList<Joystick>();
 
 	private final GodotRenderView mRenderView;
@@ -84,7 +86,6 @@ public class GodotInputHandler implements InputDeviceListener {
 
 		int source = event.getSource();
 		if (isKeyEvent_GameDevice(source)) {
-
 			final int button = getGodotButton(keyCode);
 			final int device_id = findJoystickDevice(event.getDeviceId());
 
@@ -127,7 +128,6 @@ public class GodotInputHandler implements InputDeviceListener {
 		//Log.e(TAG, String.format("Key down! source %d, device %d, joystick %d, %d, %d", event.getDeviceId(), source, (source & InputDevice.SOURCE_JOYSTICK), (source & InputDevice.SOURCE_DPAD), (source & InputDevice.SOURCE_GAMEPAD)));
 
 		if (isKeyEvent_GameDevice(source)) {
-
 			if (event.getRepeatCount() > 0) // ignore key echo
 				return true;
 
@@ -157,9 +157,55 @@ public class GodotInputHandler implements InputDeviceListener {
 		return true;
 	}
 
+	public boolean onTouchEvent(final MotionEvent event) {
+		// Mouse drag (mouse pressed and move) doesn't fire onGenericMotionEvent so this is needed
+		if (event.isFromSource(InputDevice.SOURCE_MOUSE)) {
+			if (event.getAction() != MotionEvent.ACTION_MOVE) {
+				// we return true because every time a mouse event is fired, the event is already handled
+				// in onGenericMotionEvent, so by touch event we can say that the event is also handled
+				return true;
+			}
+			return handleMouseEvent(event);
+		}
+
+		final int evcount = event.getPointerCount();
+		if (evcount == 0)
+			return true;
+
+		if (mRenderView != null) {
+			final float[] arr = new float[event.getPointerCount() * 3]; // pointerId1, x1, y1, pointerId2, etc...
+
+			for (int i = 0; i < event.getPointerCount(); i++) {
+				arr[i * 3 + 0] = event.getPointerId(i);
+				arr[i * 3 + 1] = event.getX(i);
+				arr[i * 3 + 2] = event.getY(i);
+			}
+			final int action = event.getActionMasked();
+
+			mRenderView.queueOnRenderThread(new Runnable() {
+				@Override
+				public void run() {
+					switch (action) {
+						case MotionEvent.ACTION_DOWN:
+						case MotionEvent.ACTION_CANCEL:
+						case MotionEvent.ACTION_UP:
+						case MotionEvent.ACTION_MOVE: {
+							GodotLib.touch(event.getSource(), action, 0, evcount, arr);
+						} break;
+						case MotionEvent.ACTION_POINTER_UP:
+						case MotionEvent.ACTION_POINTER_DOWN: {
+							int pointer_idx = event.getPointerId(event.getActionIndex());
+							GodotLib.touch(event.getSource(), action, pointer_idx, evcount, arr);
+						} break;
+					}
+				}
+			});
+		}
+		return true;
+	}
+
 	public boolean onGenericMotionEvent(MotionEvent event) {
 		if ((event.getSource() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK && event.getAction() == MotionEvent.ACTION_MOVE) {
-
 			final int device_id = findJoystickDevice(event.getDeviceId());
 
 			// Check if the device exists
@@ -191,8 +237,8 @@ public class GodotInputHandler implements InputDeviceListener {
 				return true;
 			}
 		} else if ((event.getSource() & InputDevice.SOURCE_STYLUS) == InputDevice.SOURCE_STYLUS) {
-			final int x = Math.round(event.getX());
-			final int y = Math.round(event.getY());
+			final float x = event.getX();
+			final float y = event.getY();
 			final int type = event.getAction();
 			queueEvent(new Runnable() {
 				@Override
@@ -201,6 +247,10 @@ public class GodotInputHandler implements InputDeviceListener {
 				}
 			});
 			return true;
+		} else if ((event.getSource() & InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE) {
+			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+				return handleMouseEvent(event);
+			}
 		}
 
 		return false;
@@ -367,5 +417,54 @@ public class GodotInputHandler implements InputDeviceListener {
 		}
 
 		return -1;
+	}
+
+	private boolean handleMouseEvent(final MotionEvent event) {
+		switch (event.getActionMasked()) {
+			case MotionEvent.ACTION_HOVER_ENTER:
+			case MotionEvent.ACTION_HOVER_MOVE:
+			case MotionEvent.ACTION_HOVER_EXIT: {
+				final float x = event.getX();
+				final float y = event.getY();
+				final int type = event.getAction();
+				queueEvent(new Runnable() {
+					@Override
+					public void run() {
+						GodotLib.hover(type, x, y);
+					}
+				});
+				return true;
+			}
+			case MotionEvent.ACTION_BUTTON_PRESS:
+			case MotionEvent.ACTION_BUTTON_RELEASE:
+			case MotionEvent.ACTION_MOVE: {
+				final float x = event.getX();
+				final float y = event.getY();
+				final int buttonsMask = event.getButtonState();
+				final int action = event.getAction();
+				queueEvent(new Runnable() {
+					@Override
+					public void run() {
+						GodotLib.touch(event.getSource(), action, 0, 1, new float[] { 0, x, y }, buttonsMask);
+					}
+				});
+				return true;
+			}
+			case MotionEvent.ACTION_SCROLL: {
+				final float x = event.getX();
+				final float y = event.getY();
+				final int buttonsMask = event.getButtonState();
+				final int action = event.getAction();
+				final float verticalFactor = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+				final float horizontalFactor = event.getAxisValue(MotionEvent.AXIS_HSCROLL);
+				queueEvent(new Runnable() {
+					@Override
+					public void run() {
+						GodotLib.touch(event.getSource(), action, 0, 1, new float[] { 0, x, y }, buttonsMask, verticalFactor, horizontalFactor);
+					}
+				});
+			}
+		}
+		return false;
 	}
 }
