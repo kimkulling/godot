@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -29,19 +29,22 @@
 /*************************************************************************/
 
 #import "view_controller.h"
-#include "core/project_settings.h"
+#include "core/config/project_settings.h"
 #include "display_server_iphone.h"
 #import "godot_view.h"
 #import "godot_view_renderer.h"
-#import "native_video_view.h"
+#import "keyboard_input_view.h"
 #include "os_iphone.h"
 
+#import <AVFoundation/AVFoundation.h>
 #import <GameController/GameController.h>
 
-@interface ViewController ()
+@interface ViewController () <GodotViewDelegate>
 
 @property(strong, nonatomic) GodotViewRenderer *renderer;
-@property(strong, nonatomic) GodotNativeVideoView *videoView;
+@property(strong, nonatomic) GodotKeyboardInputView *keyboardView;
+
+@property(strong, nonatomic) UIView *godotLoadingOverlay;
 
 @end
 
@@ -59,6 +62,7 @@
 	self.view = view;
 
 	view.renderer = self.renderer;
+	view.delegate = self;
 }
 
 - (instancetype)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil {
@@ -94,6 +98,7 @@
 	[super viewDidLoad];
 
 	[self observeKeyboard];
+	[self displayLoadingOverlay];
 
 	if (@available(iOS 11.0, *)) {
 		[self setNeedsUpdateOfScreenEdgesDeferringSystemGestures];
@@ -101,6 +106,10 @@
 }
 
 - (void)observeKeyboard {
+	printf("******** setting up keyboard input view\n");
+	self.keyboardView = [GodotKeyboardInputView new];
+	[self.view addSubview:self.keyboardView];
+
 	printf("******** adding observer for keyboard show/hide\n");
 	[[NSNotificationCenter defaultCenter]
 			addObserver:self
@@ -114,11 +123,40 @@
 				 object:nil];
 }
 
-- (void)dealloc {
-	[self.videoView stopVideo];
+- (void)displayLoadingOverlay {
+	NSBundle *bundle = [NSBundle mainBundle];
+	NSString *storyboardName = @"Launch Screen";
 
-	self.videoView = nil;
+	if ([bundle pathForResource:storyboardName ofType:@"storyboardc"] == nil) {
+		return;
+	}
+
+	UIStoryboard *launchStoryboard = [UIStoryboard storyboardWithName:storyboardName bundle:bundle];
+
+	UIViewController *controller = [launchStoryboard instantiateInitialViewController];
+	self.godotLoadingOverlay = controller.view;
+	self.godotLoadingOverlay.frame = self.view.bounds;
+	self.godotLoadingOverlay.autoresizingMask = UIViewAutoresizingFlexibleHeight | UIViewAutoresizingFlexibleWidth;
+
+	[self.view addSubview:self.godotLoadingOverlay];
+}
+
+- (BOOL)godotViewFinishedSetup:(GodotView *)view {
+	[self.godotLoadingOverlay removeFromSuperview];
+	self.godotLoadingOverlay = nil;
+
+	return YES;
+}
+
+- (void)dealloc {
+	self.keyboardView = nil;
+
 	self.renderer = nil;
+
+	if (self.godotLoadingOverlay) {
+		[self.godotLoadingOverlay removeFromSuperview];
+		self.godotLoadingOverlay = nil;
+	}
 
 	[[NSNotificationCenter defaultCenter] removeObserver:self];
 }
@@ -198,30 +236,5 @@
 		DisplayServerIPhone::get_singleton()->virtual_keyboard_set_height(0);
 	}
 }
-
-// MARK: Native Video Player
-
-- (BOOL)playVideoAtPath:(NSString *)filePath volume:(float)videoVolume audio:(NSString *)audioTrack subtitle:(NSString *)subtitleTrack {
-	// If we are showing some video already, reuse existing view for new video.
-	if (self.videoView) {
-		return [self.videoView playVideoAtPath:filePath volume:videoVolume audio:audioTrack subtitle:subtitleTrack];
-	} else {
-		// Create autoresizing view for video playback.
-		GodotNativeVideoView *videoView = [[GodotNativeVideoView alloc] initWithFrame:self.view.bounds];
-		videoView.autoresizingMask = UIViewAutoresizingFlexibleWidth & UIViewAutoresizingFlexibleHeight;
-		[self.view addSubview:videoView];
-		return [self.videoView playVideoAtPath:filePath volume:videoVolume audio:audioTrack subtitle:subtitleTrack];
-	}
-}
-
-// MARK: Delegates
-
-#ifdef GAME_CENTER_ENABLED
-- (void)gameCenterViewControllerDidFinish:(GKGameCenterViewController *)gameCenterViewController {
-	//[gameCenterViewController dismissViewControllerAnimated:YES completion:^{GameCenter::get_singleton()->game_center_closed();}];//version for signaling when overlay is completely gone
-	GameCenter::get_singleton()->game_center_closed();
-	[gameCenterViewController dismissViewControllerAnimated:YES completion:nil];
-}
-#endif
 
 @end

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,7 +31,7 @@
 #include "gdscript_cache.h"
 
 #include "core/os/file_access.h"
-#include "core/vector.h"
+#include "core/templates/vector.h"
 #include "gdscript.h"
 #include "gdscript_analyzer.h"
 #include "gdscript_parser.h"
@@ -153,9 +153,9 @@ String GDScriptCache::get_source_code(const String &p_path) {
 		ERR_FAIL_COND_V(err, "");
 	}
 
-	int len = f->get_len();
+	uint64_t len = f->get_length();
 	source_file.resize(len + 1);
-	int r = f->get_buffer(source_file.ptrw(), len);
+	uint64_t r = f->get_buffer(source_file.ptrw(), len);
 	f->close();
 	ERR_FAIL_COND_V(r != len, "");
 	source_file.write[len] = 0;

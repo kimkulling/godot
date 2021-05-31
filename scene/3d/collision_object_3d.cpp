@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,11 +30,28 @@
 
 #include "collision_object_3d.h"
 
+#include "core/config/engine.h"
 #include "scene/scene_string_names.h"
 #include "servers/physics_server_3d.h"
 
 void CollisionObject3D::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			if (_are_collision_shapes_visible()) {
+				debug_shape_old_transform = get_global_transform();
+				for (Map<uint32_t, ShapeData>::Element *E = shapes.front(); E; E = E->next()) {
+					debug_shapes_to_update.insert(E->key());
+				}
+				_update_debug_shapes();
+			}
+		} break;
+
+		case NOTIFICATION_EXIT_TREE: {
+			if (debug_shapes_count > 0) {
+				_clear_debug_shapes();
+			}
+		} break;
+
 		case NOTIFICATION_ENTER_WORLD: {
 			if (area) {
 				PhysicsServer3D::get_singleton()->area_set_transform(rid, get_global_transform());
@@ -60,6 +77,8 @@ void CollisionObject3D::_notification(int p_what) {
 				PhysicsServer3D::get_singleton()->body_set_state(rid, PhysicsServer3D::BODY_STATE_TRANSFORM, get_global_transform());
 			}
 
+			_on_transform_changed();
+
 		} break;
 		case NOTIFICATION_VISIBILITY_CHANGED: {
 			_update_pickable();
@@ -74,6 +93,64 @@ void CollisionObject3D::_notification(int p_what) {
 
 		} break;
 	}
+}
+
+void CollisionObject3D::set_collision_layer(uint32_t p_layer) {
+	collision_layer = p_layer;
+	if (area) {
+		PhysicsServer3D::get_singleton()->area_set_collision_layer(get_rid(), p_layer);
+	} else {
+		PhysicsServer3D::get_singleton()->body_set_collision_layer(get_rid(), p_layer);
+	}
+}
+
+uint32_t CollisionObject3D::get_collision_layer() const {
+	return collision_layer;
+}
+
+void CollisionObject3D::set_collision_mask(uint32_t p_mask) {
+	collision_mask = p_mask;
+	if (area) {
+		PhysicsServer3D::get_singleton()->area_set_collision_mask(get_rid(), p_mask);
+	} else {
+		PhysicsServer3D::get_singleton()->body_set_collision_mask(get_rid(), p_mask);
+	}
+}
+
+uint32_t CollisionObject3D::get_collision_mask() const {
+	return collision_mask;
+}
+
+void CollisionObject3D::set_collision_layer_bit(int p_bit, bool p_value) {
+	ERR_FAIL_INDEX_MSG(p_bit, 32, "Collision layer bit must be between 0 and 31 inclusive.");
+	uint32_t collision_layer = get_collision_layer();
+	if (p_value) {
+		collision_layer |= 1 << p_bit;
+	} else {
+		collision_layer &= ~(1 << p_bit);
+	}
+	set_collision_layer(collision_layer);
+}
+
+bool CollisionObject3D::get_collision_layer_bit(int p_bit) const {
+	ERR_FAIL_INDEX_V_MSG(p_bit, 32, false, "Collision layer bit must be between 0 and 31 inclusive.");
+	return get_collision_layer() & (1 << p_bit);
+}
+
+void CollisionObject3D::set_collision_mask_bit(int p_bit, bool p_value) {
+	ERR_FAIL_INDEX_MSG(p_bit, 32, "Collision mask bit must be between 0 and 31 inclusive.");
+	uint32_t mask = get_collision_mask();
+	if (p_value) {
+		mask |= 1 << p_bit;
+	} else {
+		mask &= ~(1 << p_bit);
+	}
+	set_collision_mask(mask);
+}
+
+bool CollisionObject3D::get_collision_mask_bit(int p_bit) const {
+	ERR_FAIL_INDEX_V_MSG(p_bit, 32, false, "Collision mask bit must be between 0 and 31 inclusive.");
+	return get_collision_mask() & (1 << p_bit);
 }
 
 void CollisionObject3D::_input_event(Node *p_camera, const Ref<InputEvent> &p_input_event, const Vector3 &p_pos, const Vector3 &p_normal, int p_shape) {
@@ -110,6 +187,106 @@ void CollisionObject3D::_update_pickable() {
 	}
 }
 
+bool CollisionObject3D::_are_collision_shapes_visible() {
+	return is_inside_tree() && get_tree()->is_debugging_collisions_hint() && !Engine::get_singleton()->is_editor_hint();
+}
+
+void CollisionObject3D::_update_shape_data(uint32_t p_owner) {
+	if (_are_collision_shapes_visible()) {
+		if (debug_shapes_to_update.is_empty()) {
+			callable_mp(this, &CollisionObject3D::_update_debug_shapes).call_deferred({}, 0);
+		}
+		debug_shapes_to_update.insert(p_owner);
+	}
+}
+
+void CollisionObject3D::_shape_changed(const Ref<Shape3D> &p_shape) {
+	for (Map<uint32_t, ShapeData>::Element *E = shapes.front(); E; E = E->next()) {
+		ShapeData &shapedata = E->get();
+		ShapeData::ShapeBase *shapes = shapedata.shapes.ptrw();
+		for (int i = 0; i < shapedata.shapes.size(); i++) {
+			ShapeData::ShapeBase &s = shapes[i];
+			if (s.shape == p_shape && s.debug_shape.is_valid()) {
+				Ref<Mesh> mesh = s.shape->get_debug_mesh();
+				RS::get_singleton()->instance_set_base(s.debug_shape, mesh->get_rid());
+			}
+		}
+	}
+}
+
+void CollisionObject3D::_update_debug_shapes() {
+	if (!is_inside_tree()) {
+		debug_shapes_to_update.clear();
+		return;
+	}
+
+	for (Set<uint32_t>::Element *shapedata_idx = debug_shapes_to_update.front(); shapedata_idx; shapedata_idx = shapedata_idx->next()) {
+		if (shapes.has(shapedata_idx->get())) {
+			ShapeData &shapedata = shapes[shapedata_idx->get()];
+			ShapeData::ShapeBase *shapes = shapedata.shapes.ptrw();
+			for (int i = 0; i < shapedata.shapes.size(); i++) {
+				ShapeData::ShapeBase &s = shapes[i];
+				if (s.shape.is_null() || shapedata.disabled) {
+					if (s.debug_shape.is_valid()) {
+						RS::get_singleton()->free(s.debug_shape);
+						s.debug_shape = RID();
+						--debug_shapes_count;
+					}
+					continue;
+				}
+
+				if (s.debug_shape.is_null()) {
+					s.debug_shape = RS::get_singleton()->instance_create();
+					RS::get_singleton()->instance_set_scenario(s.debug_shape, get_world_3d()->get_scenario());
+
+					if (!s.shape->is_connected("changed", callable_mp(this, &CollisionObject3D::_shape_changed))) {
+						s.shape->connect("changed", callable_mp(this, &CollisionObject3D::_shape_changed),
+								varray(s.shape), CONNECT_DEFERRED);
+					}
+
+					++debug_shapes_count;
+				}
+
+				Ref<Mesh> mesh = s.shape->get_debug_mesh();
+				RS::get_singleton()->instance_set_base(s.debug_shape, mesh->get_rid());
+				RS::get_singleton()->instance_set_transform(s.debug_shape, get_global_transform() * shapedata.xform);
+			}
+		}
+	}
+	debug_shapes_to_update.clear();
+}
+
+void CollisionObject3D::_clear_debug_shapes() {
+	for (Map<uint32_t, ShapeData>::Element *E = shapes.front(); E; E = E->next()) {
+		ShapeData &shapedata = E->get();
+		ShapeData::ShapeBase *shapes = shapedata.shapes.ptrw();
+		for (int i = 0; i < shapedata.shapes.size(); i++) {
+			ShapeData::ShapeBase &s = shapes[i];
+			if (s.debug_shape.is_valid()) {
+				RS::get_singleton()->free(s.debug_shape);
+				s.debug_shape = RID();
+				if (s.shape.is_valid() && s.shape->is_connected("changed", callable_mp(this, &CollisionObject3D::_update_shape_data))) {
+					s.shape->disconnect("changed", callable_mp(this, &CollisionObject3D::_update_shape_data));
+				}
+			}
+		}
+	}
+	debug_shapes_count = 0;
+}
+
+void CollisionObject3D::_on_transform_changed() {
+	if (debug_shapes_count > 0 && !debug_shape_old_transform.is_equal_approx(get_global_transform())) {
+		debug_shape_old_transform = get_global_transform();
+		for (Map<uint32_t, ShapeData>::Element *E = shapes.front(); E; E = E->next()) {
+			ShapeData &shapedata = E->get();
+			const ShapeData::ShapeBase *shapes = shapedata.shapes.ptr();
+			for (int i = 0; i < shapedata.shapes.size(); i++) {
+				RS::get_singleton()->instance_set_transform(shapes[i].debug_shape, debug_shape_old_transform * shapedata.xform);
+			}
+		}
+	}
+}
+
 void CollisionObject3D::set_ray_pickable(bool p_ray_pickable) {
 	ray_pickable = p_ray_pickable;
 	_update_pickable();
@@ -120,6 +297,14 @@ bool CollisionObject3D::is_ray_pickable() const {
 }
 
 void CollisionObject3D::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_collision_layer", "layer"), &CollisionObject3D::set_collision_layer);
+	ClassDB::bind_method(D_METHOD("get_collision_layer"), &CollisionObject3D::get_collision_layer);
+	ClassDB::bind_method(D_METHOD("set_collision_mask", "mask"), &CollisionObject3D::set_collision_mask);
+	ClassDB::bind_method(D_METHOD("get_collision_mask"), &CollisionObject3D::get_collision_mask);
+	ClassDB::bind_method(D_METHOD("set_collision_layer_bit", "bit", "value"), &CollisionObject3D::set_collision_layer_bit);
+	ClassDB::bind_method(D_METHOD("get_collision_layer_bit", "bit"), &CollisionObject3D::get_collision_layer_bit);
+	ClassDB::bind_method(D_METHOD("set_collision_mask_bit", "bit", "value"), &CollisionObject3D::set_collision_mask_bit);
+	ClassDB::bind_method(D_METHOD("get_collision_mask_bit", "bit"), &CollisionObject3D::get_collision_mask_bit);
 	ClassDB::bind_method(D_METHOD("set_ray_pickable", "ray_pickable"), &CollisionObject3D::set_ray_pickable);
 	ClassDB::bind_method(D_METHOD("is_ray_pickable"), &CollisionObject3D::is_ray_pickable);
 	ClassDB::bind_method(D_METHOD("set_capture_input_on_drag", "enable"), &CollisionObject3D::set_capture_input_on_drag);
@@ -147,6 +332,11 @@ void CollisionObject3D::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("mouse_entered"));
 	ADD_SIGNAL(MethodInfo("mouse_exited"));
 
+	ADD_GROUP("Collision", "collision_");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "collision_layer", PROPERTY_HINT_LAYERS_3D_PHYSICS), "set_collision_layer", "get_collision_layer");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "collision_mask", PROPERTY_HINT_LAYERS_3D_PHYSICS), "set_collision_mask", "get_collision_mask");
+
+	ADD_GROUP("Input", "input_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "input_ray_pickable"), "set_ray_pickable", "is_ray_pickable");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "input_capture_on_drag"), "set_capture_input_on_drag", "get_capture_input_on_drag");
 }
@@ -180,7 +370,11 @@ void CollisionObject3D::shape_owner_set_disabled(uint32_t p_owner, bool p_disabl
 	ERR_FAIL_COND(!shapes.has(p_owner));
 
 	ShapeData &sd = shapes[p_owner];
+	if (sd.disabled == p_disabled) {
+		return;
+	}
 	sd.disabled = p_disabled;
+
 	for (int i = 0; i < sd.shapes.size(); i++) {
 		if (area) {
 			PhysicsServer3D::get_singleton()->area_set_shape_disabled(rid, sd.shapes[i].index, p_disabled);
@@ -188,6 +382,7 @@ void CollisionObject3D::shape_owner_set_disabled(uint32_t p_owner, bool p_disabl
 			PhysicsServer3D::get_singleton()->body_set_shape_disabled(rid, sd.shapes[i].index, p_disabled);
 		}
 	}
+	_update_shape_data(p_owner);
 }
 
 bool CollisionObject3D::is_shape_owner_disabled(uint32_t p_owner) const {
@@ -223,6 +418,8 @@ void CollisionObject3D::shape_owner_set_transform(uint32_t p_owner, const Transf
 			PhysicsServer3D::get_singleton()->body_set_shape_transform(rid, sd.shapes[i].index, p_transform);
 		}
 	}
+
+	_update_shape_data(p_owner);
 }
 
 Transform CollisionObject3D::shape_owner_get_transform(uint32_t p_owner) const {
@@ -245,6 +442,7 @@ void CollisionObject3D::shape_owner_add_shape(uint32_t p_owner, const Ref<Shape3
 	ShapeData::ShapeBase s;
 	s.index = total_subshapes;
 	s.shape = p_shape;
+
 	if (area) {
 		PhysicsServer3D::get_singleton()->area_add_shape(rid, p_shape->get_rid(), sd.xform, sd.disabled);
 	} else {
@@ -253,6 +451,8 @@ void CollisionObject3D::shape_owner_add_shape(uint32_t p_owner, const Ref<Shape3
 	sd.shapes.push_back(s);
 
 	total_subshapes++;
+
+	_update_shape_data(p_owner);
 }
 
 int CollisionObject3D::shape_owner_get_shape_count(uint32_t p_owner) const {
@@ -279,11 +479,21 @@ void CollisionObject3D::shape_owner_remove_shape(uint32_t p_owner, int p_shape) 
 	ERR_FAIL_COND(!shapes.has(p_owner));
 	ERR_FAIL_INDEX(p_shape, shapes[p_owner].shapes.size());
 
-	int index_to_remove = shapes[p_owner].shapes[p_shape].index;
+	ShapeData::ShapeBase &s = shapes[p_owner].shapes.write[p_shape];
+	int index_to_remove = s.index;
+
 	if (area) {
 		PhysicsServer3D::get_singleton()->area_remove_shape(rid, index_to_remove);
 	} else {
 		PhysicsServer3D::get_singleton()->body_remove_shape(rid, index_to_remove);
+	}
+
+	if (s.debug_shape.is_valid()) {
+		RS::get_singleton()->free(s.debug_shape);
+		if (s.shape.is_valid() && s.shape->is_connected("changed", callable_mp(this, &CollisionObject3D::_shape_changed))) {
+			s.shape->disconnect("changed", callable_mp(this, &CollisionObject3D::_shape_changed));
+		}
+		--debug_shapes_count;
 	}
 
 	shapes[p_owner].shapes.remove(p_shape);
@@ -325,10 +535,7 @@ uint32_t CollisionObject3D::shape_find_owner(int p_shape_index) const {
 CollisionObject3D::CollisionObject3D(RID p_rid, bool p_area) {
 	rid = p_rid;
 	area = p_area;
-	capture_input_on_drag = false;
-	ray_pickable = true;
 	set_notify_transform(true);
-	total_subshapes = 0;
 
 	if (p_area) {
 		PhysicsServer3D::get_singleton()->area_attach_object_instance_id(rid, get_instance_id());
@@ -346,22 +553,17 @@ bool CollisionObject3D::get_capture_input_on_drag() const {
 	return capture_input_on_drag;
 }
 
-String CollisionObject3D::get_configuration_warning() const {
-	String warning = Node3D::get_configuration_warning();
+TypedArray<String> CollisionObject3D::get_configuration_warnings() const {
+	TypedArray<String> warnings = Node::get_configuration_warnings();
 
-	if (shapes.empty()) {
-		if (!warning.empty()) {
-			warning += "\n\n";
-		}
-		warning += TTR("This node has no shape, so it can't collide or interact with other objects.\nConsider adding a CollisionShape3D or CollisionPolygon3D as a child to define its shape.");
+	if (shapes.is_empty()) {
+		warnings.push_back(TTR("This node has no shape, so it can't collide or interact with other objects.\nConsider adding a CollisionShape3D or CollisionPolygon3D as a child to define its shape."));
 	}
 
-	return warning;
+	return warnings;
 }
 
 CollisionObject3D::CollisionObject3D() {
-	capture_input_on_drag = false;
-	ray_pickable = true;
 	set_notify_transform(true);
 	//owner=
 

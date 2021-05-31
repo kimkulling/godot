@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -33,7 +33,7 @@
 #include "dir_access_windows.h"
 
 #include "core/os/memory.h"
-#include "core/print_string.h"
+#include "core/string/print_string.h"
 
 #include <stdio.h>
 #include <wchar.h>
@@ -198,7 +198,7 @@ String DirAccessWindows::get_current_dir(bool p_include_drive) {
 		if (_get_root_string() == "") {
 			int p = current_dir.find(":");
 			if (p != -1) {
-				return current_dir.right(p + 1);
+				return current_dir.substr(p + 1);
 			}
 		}
 		return current_dir;
@@ -325,14 +325,15 @@ FileType DirAccessWindows::get_file_type(const String& p_file) const {
 }
 
 */
-size_t DirAccessWindows::get_space_left() {
+
+uint64_t DirAccessWindows::get_space_left() {
 	uint64_t bytes = 0;
 	if (!GetDiskFreeSpaceEx(nullptr, (PULARGE_INTEGER)&bytes, nullptr, nullptr)) {
 		return 0;
 	}
 
 	//this is either 0 or a value in bytes.
-	return (size_t)bytes;
+	return bytes;
 }
 
 String DirAccessWindows::get_filesystem_type() const {
@@ -366,8 +367,6 @@ DirAccessWindows::DirAccessWindows() {
 	p = memnew(DirAccessWindowsPrivate);
 	p->h = INVALID_HANDLE_VALUE;
 	current_dir = ".";
-
-	drive_count = 0;
 
 #ifdef UWP_ENABLED
 	Windows::Storage::StorageFolder ^ install_folder = Windows::ApplicationModel::Package::Current->InstalledLocation;

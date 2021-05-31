@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -45,8 +45,8 @@ void EditorAssetInstaller::_update_subitems(TreeItem *p_item, bool p_check, bool
 		p_item->set_checked(0, false);
 	}
 
-	if (p_item->get_children()) {
-		_update_subitems(p_item->get_children(), p_check);
+	if (p_item->get_first_child()) {
+		_update_subitems(p_item->get_first_child(), p_check);
 	}
 
 	if (!p_first && p_item->get_next()) {
@@ -60,7 +60,7 @@ void EditorAssetInstaller::_uncheck_parent(TreeItem *p_item) {
 	}
 
 	bool any_checked = false;
-	TreeItem *item = p_item->get_children();
+	TreeItem *item = p_item->get_first_child();
 	while (item) {
 		if (item->is_checked(0)) {
 			any_checked = true;
@@ -335,7 +335,7 @@ EditorAssetInstaller::EditorAssetInstaller() {
 
 	error = memnew(AcceptDialog);
 	add_child(error);
-	get_ok()->set_text(TTR("Install"));
+	get_ok_button()->set_text(TTR("Install"));
 	set_title(TTR("Package Installer"));
 
 	updating = false;

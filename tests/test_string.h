@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -38,11 +38,7 @@
 #include "core/io/ip_address.h"
 #include "core/os/main_loop.h"
 #include "core/os/os.h"
-#include "core/ustring.h"
-
-#ifdef MODULE_REGEX_ENABLED
-#include "modules/regex/regex.h"
-#endif
+#include "core/string/ustring.h"
 
 #include "tests/test_macros.h"
 
@@ -248,11 +244,11 @@ TEST_CASE("[String] Testing size and length of string") {
 }
 
 TEST_CASE("[String] Testing for empty string") {
-	CHECK(!String("Mellon").empty());
+	CHECK(!String("Mellon").is_empty());
 	// do this more than once, to check for string corruption
-	CHECK(String("").empty());
-	CHECK(String("").empty());
-	CHECK(String("").empty());
+	CHECK(String("").is_empty());
+	CHECK(String("").is_empty());
+	CHECK(String("").is_empty());
 }
 
 TEST_CASE("[String] Test chr") {
@@ -270,7 +266,7 @@ TEST_CASE("[String] Operator []") {
 	a[6] = 'C';
 	CHECK(a == "Sugar Cane");
 	CHECK(a[1] == 'u');
-	CHECK(a.ord_at(1) == 'u');
+	CHECK(a.unicode_at(1) == 'u');
 }
 
 TEST_CASE("[String] Case function test") {
@@ -303,6 +299,7 @@ TEST_CASE("[String] hex_encode_buffer") {
 TEST_CASE("[String] Substr") {
 	String s = "Killer Baby";
 	CHECK(s.substr(3, 4) == "ler ");
+	CHECK(s.substr(3) == "ler Baby");
 }
 
 TEST_CASE("[String] Find") {
@@ -374,12 +371,9 @@ TEST_CASE("[String] String to integer") {
 TEST_CASE("[String] Hex to integer") {
 	static const char *nums[4] = { "0xFFAE", "22", "0", "AADDAD" };
 	static const int64_t num[4] = { 0xFFAE, 0x22, 0, 0xAADDAD };
-	static const bool wo_prefix[4] = { false, true, true, true };
-	static const bool w_prefix[4] = { true, false, true, false };
 
 	for (int i = 0; i < 4; i++) {
-		CHECK((String(nums[i]).hex_to_int(true) == num[i]) == w_prefix[i]);
-		CHECK((String(nums[i]).hex_to_int(false) == num[i]) == wo_prefix[i]);
+		CHECK(String(nums[i]).hex_to_int() == num[i]);
 	}
 }
 
@@ -474,15 +468,6 @@ TEST_CASE("[String] Erasing") {
 	s.erase(s.find("cute "), String("cute ").length());
 	CHECK(s == "Josephine is such a girl!");
 }
-
-#ifdef MODULE_REGEX_ENABLED
-TEST_CASE("[String] Regex substitution") {
-	String s = "Double all the vowels.";
-	RegEx re("(?<vowel>[aeiou])");
-	s = re.sub(s, "$0$vowel", true);
-	CHECK(s == "Doouublee aall thee vooweels.");
-}
-#endif
 
 struct test_27_data {
 	char const *data;
@@ -876,10 +861,10 @@ TEST_CASE("[String] match") {
 }
 
 TEST_CASE("[String] IPVX address to string") {
-	IP_Address ip0("2001:0db8:85a3:0000:0000:8a2e:0370:7334");
-	IP_Address ip(0x0123, 0x4567, 0x89ab, 0xcdef, true);
-	IP_Address ip2("fe80::52e5:49ff:fe93:1baf");
-	IP_Address ip3("::ffff:192.168.0.1");
+	IPAddress ip0("2001:0db8:85a3:0000:0000:8a2e:0370:7334");
+	IPAddress ip(0x0123, 0x4567, 0x89ab, 0xcdef, true);
+	IPAddress ip2("fe80::52e5:49ff:fe93:1baf");
+	IPAddress ip3("::ffff:192.168.0.1");
 	String ip4 = "192.168.0.1";
 	CHECK(ip4.is_valid_ip_address());
 
@@ -1061,7 +1046,7 @@ TEST_CASE("[String] lstrip and rstrip") {
 
 TEST_CASE("[String] ensuring empty string into parse_utf8 passes empty string") {
 	String empty;
-	CHECK(empty.parse_utf8(NULL, -1));
+	CHECK(empty.parse_utf8(nullptr, -1));
 }
 
 TEST_CASE("[String] Cyrillic to_lower()") {
@@ -1168,26 +1153,75 @@ TEST_CASE("[String] hash") {
 	CHECK(a.hash64() != c.hash64());
 }
 
-TEST_CASE("[String] http_escape/unescape") {
+TEST_CASE("[String] uri_encode/unescape") {
 	String s = "Godot Engine:'docs'";
 	String t = "Godot%20Engine%3A%27docs%27";
 
-	CHECK(s.http_escape() == t);
-	CHECK(t.http_unescape() == s);
-}
+	String x1 = "T%C4%93%C5%A1t";
+	static const uint8_t u8str[] = { 0x54, 0xC4, 0x93, 0xC5, 0xA1, 0x74, 0x00 };
+	String x2 = String::utf8((const char *)u8str);
+	String x3 = U"Tēšt";
 
-TEST_CASE("[String] percent_encode/decode") { // Note: is it redundant? Seems to be same as http_escape/unescape but in lower case.
-	String s = "Godot Engine:'docs'";
-	String t = "Godot%20Engine%3a%27docs%27";
+	CHECK(x1.uri_decode() == x2);
+	CHECK(x1.uri_decode() == x3);
+	CHECK((x1 + x3).uri_decode() == (x2 + x3)); // Mixed unicode and URL encoded string, e.g. GTK+ bookmark.
+	CHECK(x2.uri_encode() == x1);
+	CHECK(x3.uri_encode() == x1);
 
-	CHECK(s.percent_encode() == t);
-	CHECK(t.percent_decode() == s);
+	CHECK(s.uri_encode() == t);
+	CHECK(t.uri_decode() == s);
 }
 
 TEST_CASE("[String] xml_escape/unescape") {
 	String s = "\"Test\" <test@test&'test'>";
 	CHECK(s.xml_escape(true).xml_unescape() == s);
 	CHECK(s.xml_escape(false).xml_unescape() == s);
+}
+
+TEST_CASE("[String] xml_unescape") {
+	// Named entities
+	String input = "&quot;&amp;&apos;&lt;&gt;";
+	CHECK(input.xml_unescape() == "\"&\'<>");
+
+	// Numeric entities
+	input = "&#x41;&#66;";
+	CHECK(input.xml_unescape() == "AB");
+
+	input = "&#0;&x#0;More text";
+	String result = input.xml_unescape();
+	// Didn't put in a leading NUL and terminate the string
+	CHECK(input.length() > 0);
+	CHECK(input[0] != '\0');
+	// Entity should be left as-is if invalid
+	CHECK(input.xml_unescape() == input);
+
+	// Check near char32_t range
+	input = "&#xFFFFFFFF;";
+	result = input.xml_unescape();
+	CHECK(result.length() == 1);
+	CHECK(result[0] == 0xFFFFFFFF);
+	input = "&#4294967295;";
+	result = input.xml_unescape();
+	CHECK(result.length() == 1);
+	CHECK(result[0] == 0xFFFFFFFF);
+
+	// Check out of range of char32_t
+	input = "&#xFFFFFFFFF;";
+	CHECK(input.xml_unescape() == input);
+	input = "&#4294967296;";
+	CHECK(input.xml_unescape() == input);
+
+	// Shouldn't consume without ending in a ';'
+	input = "&#66";
+	CHECK(input.xml_unescape() == input);
+	input = "&#x41";
+	CHECK(input.xml_unescape() == input);
+
+	// Invalid characters should make the entity ignored
+	input = "&#x41SomeIrrelevantText;";
+	CHECK(input.xml_unescape() == input);
+	input = "&#66SomeIrrelevantText;";
+	CHECK(input.xml_unescape() == input);
 }
 
 TEST_CASE("[String] Strip escapes") {
@@ -1219,8 +1253,10 @@ TEST_CASE("[String] Trim") {
 TEST_CASE("[String] Right/Left") {
 	String s = "aaaTestbbb";
 	//                ^
-	CHECK(s.right(6) == "tbbb");
+	CHECK(s.right(6) == "estbbb");
+	CHECK(s.right(-6) == "tbbb");
 	CHECK(s.left(6) == "aaaTes");
+	CHECK(s.left(-6) == "aaaT");
 }
 
 TEST_CASE("[String] Repeat") {
@@ -1297,6 +1333,19 @@ TEST_CASE("[String] humanize_size") {
 	CHECK(String::humanize_size(5345555000) == "4.97 GiB");
 }
 
+TEST_CASE("[String] validate_node_name") {
+	String numeric_only = "12345";
+	CHECK(numeric_only.validate_node_name() == "12345");
+
+	String name_with_spaces = "Name with spaces";
+	CHECK(name_with_spaces.validate_node_name() == "Name with spaces");
+
+	String name_with_kana = "Name with kana ゴドツ";
+	CHECK(name_with_kana.validate_node_name() == "Name with kana ゴドツ");
+
+	String name_with_invalid_chars = "Name with invalid characters :.@removed!";
+	CHECK(name_with_invalid_chars.validate_node_name() == "Name with invalid characters removed!");
+}
 } // namespace TestString
 
 #endif // TEST_STRING_H

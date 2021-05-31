@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -52,7 +52,7 @@
 #endif
 
 #if defined(VULKAN_ENABLED)
-#include "servers/rendering/rasterizer_rd/rasterizer_rd.h"
+#include "servers/rendering/renderer_rd/renderer_compositor_rd.h"
 
 #include <QuartzCore/CAMetalLayer.h>
 #endif
@@ -66,10 +66,10 @@
 static bool ignore_momentum_scroll = false;
 
 static void _get_key_modifier_state(unsigned int p_osx_state, Ref<InputEventWithModifiers> r_state) {
-	r_state->set_shift((p_osx_state & NSEventModifierFlagShift));
-	r_state->set_control((p_osx_state & NSEventModifierFlagControl));
-	r_state->set_alt((p_osx_state & NSEventModifierFlagOption));
-	r_state->set_metakey((p_osx_state & NSEventModifierFlagCommand));
+	r_state->set_shift_pressed((p_osx_state & NSEventModifierFlagShift));
+	r_state->set_ctrl_pressed((p_osx_state & NSEventModifierFlagControl));
+	r_state->set_alt_pressed((p_osx_state & NSEventModifierFlagOption));
+	r_state->set_meta_pressed((p_osx_state & NSEventModifierFlagCommand));
 }
 
 static Vector2i _get_mouse_pos(DisplayServerOSX::WindowData &p_wd, NSPoint p_locationInWindow) {
@@ -256,9 +256,7 @@ static NSCursor *_cursorFromSelector(SEL selector, SEL fallback = nil) {
 		List<String> args;
 		args.push_back(((OS_OSX *)(OS_OSX::get_singleton()))->open_with_filename);
 		String exec = OS::get_singleton()->get_executable_path();
-
-		OS::ProcessID pid = 0;
-		OS::get_singleton()->execute(exec, args, false, &pid);
+		OS::get_singleton()->create_process(exec, args);
 	}
 #endif
 	return YES;
@@ -369,6 +367,10 @@ static NSCursor *_cursorFromSelector(SEL selector, SEL fallback = nil) {
 
 	if (wd.resize_disabled) {
 		[wd.window_object setStyleMask:[wd.window_object styleMask] & ~NSWindowStyleMaskResizable];
+	}
+
+	if (wd.on_top) {
+		[wd.window_object setLevel:NSFloatingWindowLevel];
 	}
 }
 
@@ -701,8 +703,6 @@ static const NSRange kEmptyRange = { NSNotFound, 0 };
 		characters = (NSString *)aString;
 	}
 
-	NSUInteger i, length = [characters length];
-
 	NSCharacterSet *ctrlChars = [NSCharacterSet controlCharacterSet];
 	NSCharacterSet *wsnlChars = [NSCharacterSet whitespaceAndNewlineCharacterSet];
 	if ([characters rangeOfCharacterFromSet:ctrlChars].length && [characters rangeOfCharacterFromSet:wsnlChars].length == 0) {
@@ -712,8 +712,15 @@ static const NSRange kEmptyRange = { NSNotFound, 0 };
 		return;
 	}
 
-	for (i = 0; i < length; i++) {
-		const unichar codepoint = [characters characterAtIndex:i];
+	Char16String text;
+	text.resize([characters length] + 1);
+	[characters getCharacters:(unichar *)text.ptrw() range:NSMakeRange(0, [characters length])];
+
+	String u32text;
+	u32text.parse_utf16(text.ptr(), text.length());
+
+	for (int i = 0; i < u32text.length(); i++) {
+		const char32_t codepoint = u32text[i];
 		if ((codepoint & 0xFF00) == 0xF700) {
 			continue;
 		}
@@ -746,28 +753,32 @@ static const NSRange kEmptyRange = { NSNotFound, 0 };
 	ERR_FAIL_COND_V(!DS_OSX->windows.has(window_id), NO);
 	DisplayServerOSX::WindowData &wd = DS_OSX->windows[window_id];
 
-	NSPasteboard *pboard = [sender draggingPasteboard];
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= 101400
-	NSArray<NSURL *> *filenames = [pboard propertyListForType:NSPasteboardTypeFileURL];
-#else
-	NSArray *filenames = [pboard propertyListForType:NSFilenamesPboardType];
-#endif
-
-	Vector<String> files;
-	for (NSUInteger i = 0; i < filenames.count; i++) {
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= 101400
-		NSString *ns = [[filenames objectAtIndex:i] path];
-#else
-		NSString *ns = [filenames objectAtIndex:i];
-#endif
-		char *utfs = strdup([ns UTF8String]);
-		String ret;
-		ret.parse_utf8(utfs);
-		free(utfs);
-		files.push_back(ret);
-	}
-
 	if (!wd.drop_files_callback.is_null()) {
+		Vector<String> files;
+		NSPasteboard *pboard = [sender draggingPasteboard];
+
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= 101400
+		NSArray *items = pboard.pasteboardItems;
+		for (NSPasteboardItem *item in items) {
+			NSString *path = [item stringForType:NSPasteboardTypeFileURL];
+			NSString *ns = [NSURL URLWithString:path].path;
+			char *utfs = strdup([ns UTF8String]);
+			String ret;
+			ret.parse_utf8(utfs);
+			free(utfs);
+			files.push_back(ret);
+		}
+#else
+		NSArray *filenames = [pboard propertyListForType:NSFilenamesPboardType];
+		for (NSString *ns in filenames) {
+			char *utfs = strdup([ns UTF8String]);
+			String ret;
+			ret.parse_utf8(utfs);
+			free(utfs);
+			files.push_back(ret);
+		}
+#endif
+
 		Variant v = files;
 		Variant *vp = &v;
 		Variant ret;
@@ -822,8 +833,8 @@ static void _mouseDownEvent(DisplayServer::WindowID window_id, NSEvent *event, i
 	mb->set_position(pos);
 	mb->set_global_position(pos);
 	mb->set_button_mask(DS_OSX->last_button_state);
-	if (index == BUTTON_LEFT && pressed) {
-		mb->set_doubleclick([event clickCount] == 2);
+	if (index == MOUSE_BUTTON_LEFT && pressed) {
+		mb->set_double_click([event clickCount] == 2);
 	}
 
 	Input::get_singleton()->accumulate_input_event(mb);
@@ -835,10 +846,10 @@ static void _mouseDownEvent(DisplayServer::WindowID window_id, NSEvent *event, i
 
 	if (([event modifierFlags] & NSEventModifierFlagControl)) {
 		wd.mouse_down_control = true;
-		_mouseDownEvent(window_id, event, BUTTON_RIGHT, BUTTON_MASK_RIGHT, true);
+		_mouseDownEvent(window_id, event, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MASK_RIGHT, true);
 	} else {
 		wd.mouse_down_control = false;
-		_mouseDownEvent(window_id, event, BUTTON_LEFT, BUTTON_MASK_LEFT, true);
+		_mouseDownEvent(window_id, event, MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MASK_LEFT, true);
 	}
 }
 
@@ -851,9 +862,9 @@ static void _mouseDownEvent(DisplayServer::WindowID window_id, NSEvent *event, i
 	DisplayServerOSX::WindowData &wd = DS_OSX->windows[window_id];
 
 	if (wd.mouse_down_control) {
-		_mouseDownEvent(window_id, event, BUTTON_RIGHT, BUTTON_MASK_RIGHT, false);
+		_mouseDownEvent(window_id, event, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MASK_RIGHT, false);
 	} else {
-		_mouseDownEvent(window_id, event, BUTTON_LEFT, BUTTON_MASK_LEFT, false);
+		_mouseDownEvent(window_id, event, MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MASK_LEFT, false);
 	}
 }
 
@@ -863,6 +874,15 @@ static void _mouseDownEvent(DisplayServer::WindowID window_id, NSEvent *event, i
 
 	NSPoint delta = NSMakePoint([event deltaX], [event deltaY]);
 	NSPoint mpos = [event locationInWindow];
+
+	if (DS_OSX->ignore_warp) {
+		// Discard late events, before warp
+		if (([event timestamp]) < DS_OSX->last_warp) {
+			return;
+		}
+		DS_OSX->ignore_warp = false;
+		return;
+	}
 
 	if (DS_OSX->mouse_mode == DisplayServer::MOUSE_MODE_CONFINED) {
 		// Discard late events
@@ -930,7 +950,7 @@ static void _mouseDownEvent(DisplayServer::WindowID window_id, NSEvent *event, i
 }
 
 - (void)rightMouseDown:(NSEvent *)event {
-	_mouseDownEvent(window_id, event, BUTTON_RIGHT, BUTTON_MASK_RIGHT, true);
+	_mouseDownEvent(window_id, event, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MASK_RIGHT, true);
 }
 
 - (void)rightMouseDragged:(NSEvent *)event {
@@ -938,16 +958,16 @@ static void _mouseDownEvent(DisplayServer::WindowID window_id, NSEvent *event, i
 }
 
 - (void)rightMouseUp:(NSEvent *)event {
-	_mouseDownEvent(window_id, event, BUTTON_RIGHT, BUTTON_MASK_RIGHT, false);
+	_mouseDownEvent(window_id, event, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MASK_RIGHT, false);
 }
 
 - (void)otherMouseDown:(NSEvent *)event {
 	if ((int)[event buttonNumber] == 2) {
-		_mouseDownEvent(window_id, event, BUTTON_MIDDLE, BUTTON_MASK_MIDDLE, true);
+		_mouseDownEvent(window_id, event, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_MASK_MIDDLE, true);
 	} else if ((int)[event buttonNumber] == 3) {
-		_mouseDownEvent(window_id, event, BUTTON_XBUTTON1, BUTTON_MASK_XBUTTON1, true);
+		_mouseDownEvent(window_id, event, MOUSE_BUTTON_XBUTTON1, MOUSE_BUTTON_MASK_XBUTTON1, true);
 	} else if ((int)[event buttonNumber] == 4) {
-		_mouseDownEvent(window_id, event, BUTTON_XBUTTON2, BUTTON_MASK_XBUTTON2, true);
+		_mouseDownEvent(window_id, event, MOUSE_BUTTON_XBUTTON2, MOUSE_BUTTON_MASK_XBUTTON2, true);
 	} else {
 		return;
 	}
@@ -959,11 +979,11 @@ static void _mouseDownEvent(DisplayServer::WindowID window_id, NSEvent *event, i
 
 - (void)otherMouseUp:(NSEvent *)event {
 	if ((int)[event buttonNumber] == 2) {
-		_mouseDownEvent(window_id, event, BUTTON_MIDDLE, BUTTON_MASK_MIDDLE, false);
+		_mouseDownEvent(window_id, event, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_MASK_MIDDLE, false);
 	} else if ((int)[event buttonNumber] == 3) {
-		_mouseDownEvent(window_id, event, BUTTON_XBUTTON1, BUTTON_MASK_XBUTTON1, false);
+		_mouseDownEvent(window_id, event, MOUSE_BUTTON_XBUTTON1, MOUSE_BUTTON_MASK_XBUTTON1, false);
 	} else if ((int)[event buttonNumber] == 4) {
-		_mouseDownEvent(window_id, event, BUTTON_XBUTTON2, BUTTON_MASK_XBUTTON2, false);
+		_mouseDownEvent(window_id, event, MOUSE_BUTTON_XBUTTON2, MOUSE_BUTTON_MASK_XBUTTON2, false);
 	} else {
 		return;
 	}
@@ -1117,10 +1137,10 @@ static int translateKey(unsigned int key) {
 		/* 38 */ KEY_SHIFT,
 		/* 39 */ KEY_CAPSLOCK,
 		/* 3a */ KEY_ALT,
-		/* 3b */ KEY_CONTROL,
+		/* 3b */ KEY_CTRL,
 		/* 3c */ KEY_SHIFT,
 		/* 3d */ KEY_ALT,
-		/* 3e */ KEY_CONTROL,
+		/* 3e */ KEY_CTRL,
 		/* 3f */ KEY_UNKNOWN, /* Function */
 		/* 40 */ KEY_UNKNOWN, /* F17 */
 		/* 41 */ KEY_KP_PERIOD,
@@ -1315,7 +1335,16 @@ static int remapKey(unsigned int key, unsigned int state) {
 
 		if (!wd.im_active && length > 0 && keycode_has_unicode(remapKey([event keyCode], [event modifierFlags]))) {
 			// Fallback unicode character handler used if IME is not active
-			for (NSUInteger i = 0; i < length; i++) {
+			Char16String text;
+			text.resize([characters length] + 1);
+			[characters getCharacters:(unichar *)text.ptrw() range:NSMakeRange(0, [characters length])];
+
+			String u32text;
+			u32text.parse_utf16(text.ptr(), text.length());
+
+			for (int i = 0; i < u32text.length(); i++) {
+				const char32_t codepoint = u32text[i];
+
 				DisplayServerOSX::KeyEvent ke;
 
 				ke.window_id = window_id;
@@ -1325,7 +1354,7 @@ static int remapKey(unsigned int key, unsigned int state) {
 				ke.keycode = remapKey([event keyCode], [event modifierFlags]);
 				ke.physical_keycode = translateKey([event keyCode]);
 				ke.raw = true;
-				ke.unicode = [characters characterAtIndex:i];
+				ke.unicode = codepoint;
 
 				_push_to_key_event_buffer(ke);
 			}
@@ -1417,7 +1446,15 @@ static int remapKey(unsigned int key, unsigned int state) {
 
 		// Fallback unicode character handler used if IME is not active
 		if (!wd.im_active && length > 0 && keycode_has_unicode(remapKey([event keyCode], [event modifierFlags]))) {
-			for (NSUInteger i = 0; i < length; i++) {
+			Char16String text;
+			text.resize([characters length] + 1);
+			[characters getCharacters:(unichar *)text.ptrw() range:NSMakeRange(0, [characters length])];
+
+			String u32text;
+			u32text.parse_utf16(text.ptr(), text.length());
+
+			for (int i = 0; i < u32text.length(); i++) {
+				const char32_t codepoint = u32text[i];
 				DisplayServerOSX::KeyEvent ke;
 
 				ke.window_id = window_id;
@@ -1427,7 +1464,7 @@ static int remapKey(unsigned int key, unsigned int state) {
 				ke.keycode = remapKey([event keyCode], [event modifierFlags]);
 				ke.physical_keycode = translateKey([event keyCode]);
 				ke.raw = true;
-				ke.unicode = [characters characterAtIndex:i];
+				ke.unicode = codepoint;
 
 				_push_to_key_event_buffer(ke);
 			}
@@ -1525,10 +1562,10 @@ inline void sendPanEvent(DisplayServer::WindowID window_id, double dx, double dy
 		sendPanEvent(window_id, deltaX, deltaY, [event modifierFlags]);
 	} else {
 		if (fabs(deltaX)) {
-			sendScrollEvent(window_id, 0 > deltaX ? BUTTON_WHEEL_RIGHT : BUTTON_WHEEL_LEFT, fabs(deltaX * 0.3), [event modifierFlags]);
+			sendScrollEvent(window_id, 0 > deltaX ? MOUSE_BUTTON_WHEEL_RIGHT : MOUSE_BUTTON_WHEEL_LEFT, fabs(deltaX * 0.3), [event modifierFlags]);
 		}
 		if (fabs(deltaY)) {
-			sendScrollEvent(window_id, 0 < deltaY ? BUTTON_WHEEL_UP : BUTTON_WHEEL_DOWN, fabs(deltaY * 0.3), [event modifierFlags]);
+			sendScrollEvent(window_id, 0 < deltaY ? MOUSE_BUTTON_WHEEL_UP : MOUSE_BUTTON_WHEEL_DOWN, fabs(deltaY * 0.3), [event modifierFlags]);
 		}
 	}
 }
@@ -1607,7 +1644,7 @@ String DisplayServerOSX::get_name() const {
 }
 
 const NSMenu *DisplayServerOSX::_get_menu_root(const String &p_menu_root) const {
-	const NSMenu *menu = NULL;
+	const NSMenu *menu = nullptr;
 	if (p_menu_root == "") {
 		// Main menu.x
 		menu = [NSApp mainMenu];
@@ -1622,13 +1659,13 @@ const NSMenu *DisplayServerOSX::_get_menu_root(const String &p_menu_root) const 
 	}
 	if (menu == apple_menu) {
 		// Do not allow to change Apple menu.
-		return NULL;
+		return nullptr;
 	}
 	return menu;
 }
 
 NSMenu *DisplayServerOSX::_get_menu_root(const String &p_menu_root) {
-	NSMenu *menu = NULL;
+	NSMenu *menu = nullptr;
 	if (p_menu_root == "") {
 		// Main menu.
 		menu = [NSApp mainMenu];
@@ -1645,7 +1682,7 @@ NSMenu *DisplayServerOSX::_get_menu_root(const String &p_menu_root) {
 	}
 	if (menu == apple_menu) {
 		// Do not allow to change Apple menu.
-		return NULL;
+		return nullptr;
 	}
 	return menu;
 }
@@ -2074,6 +2111,8 @@ void DisplayServerOSX::mouse_set_mode(MouseMode p_mode) {
 		CGAssociateMouseAndMouseCursorPosition(true);
 	}
 
+	last_warp = [[NSProcessInfo processInfo] systemUptime];
+	ignore_warp = true;
 	warp_events.clear();
 	mouse_mode = p_mode;
 }
@@ -2402,7 +2441,7 @@ void DisplayServerOSX::_update_window(WindowData p_wd) {
 		[p_wd.window_object setHidesOnDeactivate:YES];
 	} else {
 		// Reset these when our window is not a borderless window that covers up the screen
-		if (p_wd.on_top) {
+		if (p_wd.on_top && !p_wd.fullscreen) {
 			[p_wd.window_object setLevel:NSFloatingWindowLevel];
 		} else {
 			[p_wd.window_object setLevel:NSNormalWindowLevel];
@@ -2751,6 +2790,7 @@ void DisplayServerOSX::window_set_mode(WindowMode p_mode, WindowID p_window) {
 			[wd.window_object deminiaturize:nil];
 		} break;
 		case WINDOW_MODE_FULLSCREEN: {
+			[wd.window_object setLevel:NSNormalWindowLevel];
 			if (wd.layered_window) {
 				_set_window_per_pixel_transparency_enabled(true, p_window);
 			}
@@ -2868,6 +2908,9 @@ void DisplayServerOSX::window_set_flag(WindowFlags p_flag, bool p_enabled, Windo
 		} break;
 		case WINDOW_FLAG_ALWAYS_ON_TOP: {
 			wd.on_top = p_enabled;
+			if (wd.fullscreen) {
+				return;
+			}
 			if (p_enabled) {
 				[wd.window_object setLevel:NSFloatingWindowLevel];
 			} else {
@@ -2905,7 +2948,11 @@ bool DisplayServerOSX::window_get_flag(WindowFlags p_flag, WindowID p_window) co
 			return [wd.window_object styleMask] == NSWindowStyleMaskBorderless;
 		} break;
 		case WINDOW_FLAG_ALWAYS_ON_TOP: {
-			return [wd.window_object level] == NSFloatingWindowLevel;
+			if (wd.fullscreen) {
+				return wd.on_top;
+			} else {
+				return [wd.window_object level] == NSFloatingWindowLevel;
+			}
 		} break;
 		case WINDOW_FLAG_TRANSPARENT: {
 			return wd.layered_window;
@@ -2994,7 +3041,7 @@ void DisplayServerOSX::cursor_set_shape(CursorShape p_shape) {
 		return;
 	}
 
-	if (cursors[p_shape] != NULL) {
+	if (cursors[p_shape] != nullptr) {
 		[cursors[p_shape] set];
 	} else {
 		switch (p_shape) {
@@ -3082,7 +3129,7 @@ void DisplayServerOSX::cursor_set_custom_image(const RES &p_cursor, CursorShape 
 		Rect2 atlas_rect;
 
 		if (texture.is_valid()) {
-			image = texture->get_data();
+			image = texture->get_image();
 		}
 
 		if (!image.is_valid() && atlas_texture.is_valid()) {
@@ -3105,7 +3152,7 @@ void DisplayServerOSX::cursor_set_custom_image(const RES &p_cursor, CursorShape 
 		ERR_FAIL_COND(texture_size.width > 256 || texture_size.height > 256);
 		ERR_FAIL_COND(p_hotspot.x > texture_size.width || p_hotspot.y > texture_size.height);
 
-		image = texture->get_data();
+		image = texture->get_image();
 
 		ERR_FAIL_COND(!image.is_valid());
 
@@ -3167,9 +3214,9 @@ void DisplayServerOSX::cursor_set_custom_image(const RES &p_cursor, CursorShape 
 		[nsimage release];
 	} else {
 		// Reset to default system cursor
-		if (cursors[p_shape] != NULL) {
+		if (cursors[p_shape] != nullptr) {
 			[cursors[p_shape] release];
-			cursors[p_shape] = NULL;
+			cursors[p_shape] = nullptr;
 		}
 
 		CursorShape c = cursor_shape;
@@ -3432,7 +3479,7 @@ void DisplayServerOSX::set_native_icon(const String &p_filename) {
 	ERR_FAIL_COND(!f);
 
 	Vector<uint8_t> data;
-	uint32_t len = f->get_len();
+	uint64_t len = f->get_length();
 	data.resize(len);
 	f->get_buffer((uint8_t *)&data.write[0], len);
 	memdelete(f);
@@ -3724,12 +3771,12 @@ DisplayServerOSX::DisplayServerOSX(const String &p_rendering_driver, WindowMode 
 
 	// Register to be notified on keyboard layout changes
 	CFNotificationCenterAddObserver(CFNotificationCenterGetDistributedCenter(),
-			NULL, keyboard_layout_changed,
-			kTISNotifySelectedKeyboardInputSourceChanged, NULL,
+			nullptr, keyboard_layout_changed,
+			kTISNotifySelectedKeyboardInputSourceChanged, nullptr,
 			CFNotificationSuspensionBehaviorDeliverImmediately);
 
 	// Register to be notified on displays arrangement changes
-	CGDisplayRegisterReconfigurationCallback(displays_arrangement_changed, NULL);
+	CGDisplayRegisterReconfigurationCallback(displays_arrangement_changed, nullptr);
 
 	// Menu bar setup must go between sharedApplication above and
 	// finishLaunching below, in order to properly emulate the behavior
@@ -3819,7 +3866,7 @@ DisplayServerOSX::DisplayServerOSX(const String &p_rendering_driver, WindowMode 
 		context_vulkan = memnew(VulkanContextOSX);
 		if (context_vulkan->initialize() != OK) {
 			memdelete(context_vulkan);
-			context_vulkan = NULL;
+			context_vulkan = nullptr;
 			r_error = ERR_CANT_CREATE;
 			ERR_FAIL_MSG("Could not initialize Vulkan");
 		}
@@ -3848,7 +3895,7 @@ DisplayServerOSX::DisplayServerOSX(const String &p_rendering_driver, WindowMode 
 		rendering_device_vulkan = memnew(RenderingDeviceVulkan);
 		rendering_device_vulkan->initialize(context_vulkan);
 
-		RasterizerRD::make_current();
+		RendererCompositorRD::make_current();
 	}
 #endif
 
@@ -3891,8 +3938,8 @@ DisplayServerOSX::~DisplayServerOSX() {
 	}
 #endif
 
-	CFNotificationCenterRemoveObserver(CFNotificationCenterGetDistributedCenter(), NULL, kTISNotifySelectedKeyboardInputSourceChanged, NULL);
-	CGDisplayRemoveReconfigurationCallback(displays_arrangement_changed, NULL);
+	CFNotificationCenterRemoveObserver(CFNotificationCenterGetDistributedCenter(), nullptr, kTISNotifySelectedKeyboardInputSourceChanged, nullptr);
+	CGDisplayRemoveReconfigurationCallback(displays_arrangement_changed, nullptr);
 
 	cursors_cache.clear();
 }

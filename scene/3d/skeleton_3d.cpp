@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,10 +30,10 @@
 
 #include "skeleton_3d.h"
 
-#include "core/engine.h"
-#include "core/message_queue.h"
-#include "core/project_settings.h"
-#include "core/type_info.h"
+#include "core/config/engine.h"
+#include "core/config/project_settings.h"
+#include "core/object/message_queue.h"
+#include "core/variant/type_info.h"
 #include "scene/3d/physics_body_3d.h"
 #include "scene/resources/surface_tool.h"
 #include "scene/scene_string_names.h"
@@ -94,20 +94,6 @@ bool Skeleton3D::_set(const StringName &p_path, const Variant &p_value) {
 		set_bone_enabled(which, p_value);
 	} else if (what == "pose") {
 		set_bone_pose(which, p_value);
-	} else if (what == "bound_children") {
-		Array children = p_value;
-
-		if (is_inside_tree()) {
-			bones.write[which].nodes_bound.clear();
-
-			for (int i = 0; i < children.size(); i++) {
-				NodePath npath = children[i];
-				ERR_CONTINUE(npath.operator String() == "");
-				Node *node = get_node(npath);
-				ERR_CONTINUE(!node);
-				bind_child_node_to_bone(which, node);
-			}
-		}
 	} else {
 		return false;
 	}
@@ -137,19 +123,6 @@ bool Skeleton3D::_get(const StringName &p_path, Variant &r_ret) const {
 		r_ret = is_bone_enabled(which);
 	} else if (what == "pose") {
 		r_ret = get_bone_pose(which);
-	} else if (what == "bound_children") {
-		Array children;
-
-		for (const List<ObjectID>::Element *E = bones[which].nodes_bound.front(); E; E = E->next()) {
-			Object *obj = ObjectDB::get_instance(E->get());
-			ERR_CONTINUE(!obj);
-			Node *node = Object::cast_to<Node>(obj);
-			ERR_CONTINUE(!node);
-			NodePath npath = get_path_to(node);
-			children.push_back(npath);
-		}
-
-		r_ret = children;
 	} else {
 		return false;
 	}
@@ -165,7 +138,6 @@ void Skeleton3D::_get_property_list(List<PropertyInfo> *p_list) const {
 		p_list->push_back(PropertyInfo(Variant::TRANSFORM, prep + "rest", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR));
 		p_list->push_back(PropertyInfo(Variant::BOOL, prep + "enabled", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR));
 		p_list->push_back(PropertyInfo(Variant::TRANSFORM, prep + "pose", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR));
-		p_list->push_back(PropertyInfo(Variant::ARRAY, prep + "bound_children", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR));
 	}
 }
 
@@ -237,51 +209,55 @@ void Skeleton3D::_notification(int p_what) {
 			for (int i = 0; i < len; i++) {
 				Bone &b = bonesptr[order[i]];
 
-				if (b.global_pose_override_amount >= 0.999) {
-					b.pose_global = b.global_pose_override;
-				} else {
-					if (b.disable_rest) {
-						if (b.enabled) {
-							Transform pose = b.pose;
-							if (b.custom_pose_enable) {
-								pose = b.custom_pose * pose;
-							}
-							if (b.parent >= 0) {
-								b.pose_global = bonesptr[b.parent].pose_global * pose;
-							} else {
-								b.pose_global = pose;
-							}
-						} else {
-							if (b.parent >= 0) {
-								b.pose_global = bonesptr[b.parent].pose_global;
-							} else {
-								b.pose_global = Transform();
-							}
+				if (b.disable_rest) {
+					if (b.enabled) {
+						Transform pose = b.pose;
+						if (b.custom_pose_enable) {
+							pose = b.custom_pose * pose;
 						}
-
+						if (b.parent >= 0) {
+							b.pose_global = bonesptr[b.parent].pose_global * pose;
+							b.pose_global_no_override = bonesptr[b.parent].pose_global * pose;
+						} else {
+							b.pose_global = pose;
+							b.pose_global_no_override = pose;
+						}
 					} else {
-						if (b.enabled) {
-							Transform pose = b.pose;
-							if (b.custom_pose_enable) {
-								pose = b.custom_pose * pose;
-							}
-							if (b.parent >= 0) {
-								b.pose_global = bonesptr[b.parent].pose_global * (b.rest * pose);
-							} else {
-								b.pose_global = b.rest * pose;
-							}
+						if (b.parent >= 0) {
+							b.pose_global = bonesptr[b.parent].pose_global;
+							b.pose_global_no_override = bonesptr[b.parent].pose_global;
 						} else {
-							if (b.parent >= 0) {
-								b.pose_global = bonesptr[b.parent].pose_global * b.rest;
-							} else {
-								b.pose_global = b.rest;
-							}
+							b.pose_global = Transform();
+							b.pose_global_no_override = Transform();
 						}
 					}
 
-					if (b.global_pose_override_amount >= CMP_EPSILON) {
-						b.pose_global = b.pose_global.interpolate_with(b.global_pose_override, b.global_pose_override_amount);
+				} else {
+					if (b.enabled) {
+						Transform pose = b.pose;
+						if (b.custom_pose_enable) {
+							pose = b.custom_pose * pose;
+						}
+						if (b.parent >= 0) {
+							b.pose_global = bonesptr[b.parent].pose_global * (b.rest * pose);
+							b.pose_global_no_override = bonesptr[b.parent].pose_global * (b.rest * pose);
+						} else {
+							b.pose_global = b.rest * pose;
+							b.pose_global_no_override = b.rest * pose;
+						}
+					} else {
+						if (b.parent >= 0) {
+							b.pose_global = bonesptr[b.parent].pose_global * b.rest;
+							b.pose_global_no_override = bonesptr[b.parent].pose_global * b.rest;
+						} else {
+							b.pose_global = b.rest;
+							b.pose_global_no_override = b.rest;
+						}
 					}
+				}
+
+				if (b.global_pose_override_amount >= CMP_EPSILON) {
+					b.pose_global = b.pose_global.interpolate_with(b.global_pose_override, b.global_pose_override_amount);
 				}
 
 				if (b.global_pose_override_reset) {
@@ -304,7 +280,7 @@ void Skeleton3D::_notification(int p_what) {
 				uint32_t bind_count = skin->get_bind_count();
 
 				if (E->get()->bind_count != bind_count) {
-					RS::get_singleton()->skeleton_allocate(skeleton, bind_count);
+					RS::get_singleton()->skeleton_allocate_data(skeleton, bind_count);
 					E->get()->bind_count = bind_count;
 					E->get()->skin_bone_indices.resize(bind_count);
 					E->get()->skin_bone_indices_ptrs = E->get()->skin_bone_indices.ptrw();
@@ -387,6 +363,7 @@ void Skeleton3D::_notification(int p_what) {
 void Skeleton3D::clear_bones_global_pose_override() {
 	for (int i = 0; i < bones.size(); i += 1) {
 		bones.write[i].global_pose_override_amount = 0;
+		bones.write[i].global_pose_override_reset = true;
 	}
 	_make_dirty();
 }
@@ -405,6 +382,14 @@ Transform Skeleton3D::get_bone_global_pose(int p_bone) const {
 		const_cast<Skeleton3D *>(this)->notification(NOTIFICATION_UPDATE_SKELETON);
 	}
 	return bones[p_bone].pose_global;
+}
+
+Transform Skeleton3D::get_bone_global_pose_no_override(int p_bone) const {
+	ERR_FAIL_INDEX_V(p_bone, bones.size(), Transform());
+	if (dirty) {
+		const_cast<Skeleton3D *>(this)->notification(NOTIFICATION_UPDATE_SKELETON);
+	}
+	return bones[p_bone].pose_global_no_override;
 }
 
 // skeleton creation api
@@ -438,6 +423,17 @@ String Skeleton3D::get_bone_name(int p_bone) const {
 	ERR_FAIL_INDEX_V(p_bone, bones.size(), "");
 
 	return bones[p_bone].name;
+}
+void Skeleton3D::set_bone_name(int p_bone, const String &p_name) {
+	ERR_FAIL_INDEX(p_bone, bones.size());
+
+	for (int i = 0; i < bones.size(); i++) {
+		if (i != p_bone) {
+			ERR_FAIL_COND(bones[i].name == p_name);
+		}
+	}
+
+	bones.write[p_bone].name = p_name;
 }
 
 bool Skeleton3D::is_bone_parent_of(int p_bone, int p_parent_bone_id) const {
@@ -848,7 +844,7 @@ Ref<SkinReference> Skeleton3D::register_skin(const Ref<Skin> &p_skin) {
 
 	skin_bindings.insert(skin_ref.operator->());
 
-	skin->connect_compat("changed", skin_ref.operator->(), "_skin_changed");
+	skin->connect("changed", Callable(skin_ref.operator->(), "_skin_changed"));
 
 	_make_dirty(); //skin needs to be updated, so update skeleton
 
@@ -869,6 +865,7 @@ void Skeleton3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("add_bone", "name"), &Skeleton3D::add_bone);
 	ClassDB::bind_method(D_METHOD("find_bone", "name"), &Skeleton3D::find_bone);
 	ClassDB::bind_method(D_METHOD("get_bone_name", "bone_idx"), &Skeleton3D::get_bone_name);
+	ClassDB::bind_method(D_METHOD("set_bone_name", "bone_idx", "name"), &Skeleton3D::set_bone_name);
 
 	ClassDB::bind_method(D_METHOD("get_bone_parent", "bone_idx"), &Skeleton3D::get_bone_parent);
 	ClassDB::bind_method(D_METHOD("set_bone_parent", "bone_idx", "parent_idx"), &Skeleton3D::set_bone_parent);
@@ -887,10 +884,6 @@ void Skeleton3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_bone_disable_rest", "bone_idx", "disable"), &Skeleton3D::set_bone_disable_rest);
 	ClassDB::bind_method(D_METHOD("is_bone_rest_disabled", "bone_idx"), &Skeleton3D::is_bone_rest_disabled);
 
-	ClassDB::bind_method(D_METHOD("bind_child_node_to_bone", "bone_idx", "node"), &Skeleton3D::bind_child_node_to_bone);
-	ClassDB::bind_method(D_METHOD("unbind_child_node_from_bone", "bone_idx", "node"), &Skeleton3D::unbind_child_node_from_bone);
-	ClassDB::bind_method(D_METHOD("get_bound_child_nodes_to_bone", "bone_idx"), &Skeleton3D::_get_bound_child_nodes_to_bone);
-
 	ClassDB::bind_method(D_METHOD("clear_bones"), &Skeleton3D::clear_bones);
 
 	ClassDB::bind_method(D_METHOD("get_bone_pose", "bone_idx"), &Skeleton3D::get_bone_pose);
@@ -899,6 +892,7 @@ void Skeleton3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("clear_bones_global_pose_override"), &Skeleton3D::clear_bones_global_pose_override);
 	ClassDB::bind_method(D_METHOD("set_bone_global_pose_override", "bone_idx", "pose", "amount", "persistent"), &Skeleton3D::set_bone_global_pose_override, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("get_bone_global_pose", "bone_idx"), &Skeleton3D::get_bone_global_pose);
+	ClassDB::bind_method(D_METHOD("get_bone_global_pose_no_override", "bone_idx"), &Skeleton3D::get_bone_global_pose_no_override);
 
 	ClassDB::bind_method(D_METHOD("get_bone_custom_pose", "bone_idx"), &Skeleton3D::get_bone_custom_pose);
 	ClassDB::bind_method(D_METHOD("set_bone_custom_pose", "bone_idx", "custom_pose"), &Skeleton3D::set_bone_custom_pose);
@@ -927,10 +921,6 @@ void Skeleton3D::_bind_methods() {
 }
 
 Skeleton3D::Skeleton3D() {
-	animate_physical_bones = true;
-	dirty = false;
-	version = 1;
-	process_order_dirty = true;
 }
 
 Skeleton3D::~Skeleton3D() {

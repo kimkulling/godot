@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -56,32 +56,34 @@ class VisualShaderGraphPlugin : public Reference {
 
 private:
 	struct InputPort {
-		Button *default_input_button;
+		Button *default_input_button = nullptr;
 	};
 
 	struct Port {
-		TextureButton *preview_button;
+		TextureButton *preview_button = nullptr;
 	};
 
 	struct Link {
-		VisualShader::Type type;
-		VisualShaderNode *visual_node;
-		GraphNode *graph_node;
-		bool preview_visible;
-		int preview_pos;
+		VisualShader::Type type = VisualShader::Type::TYPE_MAX;
+		VisualShaderNode *visual_node = nullptr;
+		GraphNode *graph_node = nullptr;
+		bool preview_visible = false;
+		int preview_pos = 0;
 		Map<int, InputPort> input_ports;
 		Map<int, Port> output_ports;
-		VBoxContainer *preview_box;
-		LineEdit *uniform_name;
-		OptionButton *const_op;
-		CodeEdit *expression_edit;
-		CurveEditor *curve_editor;
+		VBoxContainer *preview_box = nullptr;
+		LineEdit *uniform_name = nullptr;
+		OptionButton *const_op = nullptr;
+		CodeEdit *expression_edit = nullptr;
+		CurveEditor *curve_editor = nullptr;
 	};
 
 	Ref<VisualShader> visual_shader;
 	Map<int, Link> links;
 	List<VisualShader::Connection> connections;
 	bool dirty = false;
+
+	Color vector_expanded_color[3];
 
 protected:
 	static void _bind_methods();
@@ -119,6 +121,7 @@ public:
 	void set_expression(VisualShader::Type p_type, int p_node_id, const String &p_expression);
 	int get_constant_index(float p_constant) const;
 	void update_node_size(int p_node_id);
+	void update_theme();
 	VisualShader::Type get_shader_type() const;
 
 	VisualShaderGraphPlugin();
@@ -134,7 +137,6 @@ class VisualShaderEditor : public VBoxContainer {
 	int editing_port;
 
 	Ref<VisualShader> visual_shader;
-	HSplitContainer *main_box;
 	GraphEdit *graph;
 	Button *add_node;
 	Button *preview_shader;
@@ -142,12 +144,14 @@ class VisualShaderEditor : public VBoxContainer {
 	OptionButton *edit_type = nullptr;
 	OptionButton *edit_type_standart;
 	OptionButton *edit_type_particles;
+	OptionButton *edit_type_sky;
 
 	PanelContainer *error_panel;
 	Label *error_label;
 
 	bool pending_update_preview;
 	bool shader_error;
+	Window *preview_window;
 	VBoxContainer *preview_vbox;
 	CodeEdit *preview_text;
 	Ref<CodeHighlighter> syntax_highlighter;
@@ -161,8 +165,22 @@ class VisualShaderEditor : public VBoxContainer {
 	PopupMenu *popup_menu;
 	MenuButton *tools;
 
-	bool preview_showed;
-	bool particles_mode;
+	PopupPanel *comment_title_change_popup = nullptr;
+	LineEdit *comment_title_change_edit = nullptr;
+
+	PopupPanel *comment_desc_change_popup = nullptr;
+	TextEdit *comment_desc_change_edit = nullptr;
+
+	bool preview_first = true;
+	bool preview_showed = false;
+
+	enum ShaderModeFlags {
+		MODE_FLAGS_SPATIAL_CANVASITEM = 1,
+		MODE_FLAGS_SKY = 2,
+		MODE_FLAGS_PARTICLES = 4
+	};
+
+	int mode = MODE_FLAGS_SPATIAL_CANVASITEM;
 
 	enum TypeFlags {
 		TYPE_FLAGS_VERTEX = 1,
@@ -174,6 +192,10 @@ class VisualShaderEditor : public VBoxContainer {
 		TYPE_FLAGS_EMIT = 1,
 		TYPE_FLAGS_PROCESS = 2,
 		TYPE_FLAGS_END = 4
+	};
+
+	enum SkyTypeFlags {
+		TYPE_FLAGS_SKY = 1,
 	};
 
 	enum ToolsMenuOptions {
@@ -188,6 +210,12 @@ class VisualShaderEditor : public VBoxContainer {
 		PASTE,
 		DELETE,
 		DUPLICATE,
+		SEPARATOR2, // ignore
+		CONVERT_CONSTANTS_TO_UNIFORMS,
+		CONVERT_UNIFORMS_TO_CONSTANTS,
+		SEPARATOR3, // ignore
+		SET_COMMENT_TITLE,
+		SET_COMMENT_DESCRIPTION,
 	};
 
 	Tree *members;
@@ -206,16 +234,16 @@ class VisualShaderEditor : public VBoxContainer {
 		String category;
 		String type;
 		String description;
-		int sub_func;
+		int sub_func = 0;
 		String sub_func_str;
 		Ref<Script> script;
-		int mode;
-		int return_type;
-		int func;
-		float value;
-		bool highend;
-		bool is_custom;
-		int temp_idx;
+		int mode = 0;
+		int return_type = 0;
+		int func = 0;
+		float value = 0;
+		bool highend = false;
+		bool is_custom = false;
+		int temp_idx = 0;
 
 		AddOption(const String &p_name = String(), const String &p_category = String(), const String &p_sub_category = String(), const String &p_type = String(), const String &p_description = String(), int p_sub_func = -1, int p_return_type = -1, int p_mode = -1, int p_func = -1, float p_value = -1, bool p_highend = false) {
 			name = p_name;
@@ -265,26 +293,22 @@ class VisualShaderEditor : public VBoxContainer {
 
 	void _draw_color_over_button(Object *obj, Color p_color);
 
-	void _add_custom_node(const String &p_path);
-	void _add_cubemap_node(const String &p_path);
-	void _add_texture2d_node(const String &p_path);
-	void _add_texture2d_array_node(const String &p_path);
-	void _add_texture3d_node(const String &p_path);
-	void _add_curve_node(const String &p_path);
-
-	VisualShaderNode *_add_node(int p_idx, int p_op_idx = -1);
+	void _setup_node(VisualShaderNode *p_node, int p_op_idx);
+	void _add_node(int p_idx, int p_op_idx = -1, String p_resource_path = "", int p_node_idx = -1);
 	void _update_options_menu();
 	void _set_mode(int p_which);
 
 	void _show_preview_text();
+	void _preview_close_requested();
+	void _preview_size_changed();
 	void _update_preview();
 	String _get_description(int p_idx);
 
 	static VisualShaderEditor *singleton;
 
 	struct DragOp {
-		VisualShader::Type type;
-		int node;
+		VisualShader::Type type = VisualShader::Type::TYPE_MAX;
+		int node = 0;
 		Vector2 from;
 		Vector2 to;
 	};
@@ -316,8 +340,28 @@ class VisualShaderEditor : public VBoxContainer {
 	int from_node;
 	int from_slot;
 
+	Set<int> selected_constants;
+	Set<int> selected_uniforms;
+	int selected_comment = -1;
+
+	void _convert_constants_to_uniforms(bool p_vice_versa);
+	void _replace_node(VisualShader::Type p_type_id, int p_node_id, const StringName &p_from, const StringName &p_to);
+	void _update_constant(VisualShader::Type p_type_id, int p_node_id, Variant p_var, int p_preview_port);
+	void _update_uniform(VisualShader::Type p_type_id, int p_node_id, Variant p_var, int p_preview_port);
+
 	void _connection_to_empty(const String &p_from, int p_from_slot, const Vector2 &p_release_position);
 	void _connection_from_empty(const String &p_to, int p_to_slot, const Vector2 &p_release_position);
+
+	void _comment_title_popup_show(const Point2 &p_position, int p_node_id);
+	void _comment_title_popup_hide();
+	void _comment_title_popup_focus_out();
+	void _comment_title_text_changed(const String &p_new_text);
+	void _comment_title_text_entered(const String &p_new_text);
+
+	void _comment_desc_popup_show(const Point2 &p_position, int p_node_id);
+	void _comment_desc_popup_hide();
+	void _comment_desc_confirm();
+	void _comment_desc_text_changed();
 
 	void _uniform_line_edit_changed(const String &p_text, int p_node_id);
 	void _uniform_line_edit_focus_out(Object *line_edit, int p_node_id);
@@ -354,12 +398,13 @@ class VisualShaderEditor : public VBoxContainer {
 	void _add_input_port(int p_node, int p_port, int p_port_type, const String &p_name);
 	void _remove_input_port(int p_node, int p_port);
 	void _change_input_port_type(int p_type, int p_node, int p_port);
-	void _change_input_port_name(const String &p_text, Object *line_edit, int p_node, int p_port);
+	void _change_input_port_name(const String &p_text, Object *p_line_edit, int p_node, int p_port);
 
 	void _add_output_port(int p_node, int p_port, int p_port_type, const String &p_name);
 	void _remove_output_port(int p_node, int p_port);
 	void _change_output_port_type(int p_type, int p_node, int p_port);
-	void _change_output_port_name(const String &p_text, Object *line_edit, int p_node, int p_port);
+	void _change_output_port_name(const String &p_text, Object *p_line_edit, int p_node, int p_port);
+	void _expand_output_port(int p_node, int p_port, bool p_expand);
 
 	void _expression_focus_out(Object *code_edit, int p_node);
 
@@ -387,6 +432,8 @@ class VisualShaderEditor : public VBoxContainer {
 	void _update_created_node(GraphNode *node);
 	void _update_uniforms(bool p_update_refs);
 	void _update_uniform_refs(Set<String> &p_names);
+
+	void _visibility_changed();
 
 protected:
 	void _notification(int p_what);
@@ -462,9 +509,9 @@ public:
 class VisualShaderNodePortPreview : public Control {
 	GDCLASS(VisualShaderNodePortPreview, Control);
 	Ref<VisualShader> shader;
-	VisualShader::Type type;
-	int node;
-	int port;
+	VisualShader::Type type = VisualShader::Type::TYPE_MAX;
+	int node = 0;
+	int port = 0;
 	void _shader_changed(); //must regen
 protected:
 	void _notification(int p_what);
@@ -473,7 +520,6 @@ protected:
 public:
 	virtual Size2 get_minimum_size() const override;
 	void setup(const Ref<VisualShader> &p_shader, VisualShader::Type p_type, int p_node, int p_port);
-	VisualShaderNodePortPreview();
 };
 
 class VisualShaderConversionPlugin : public EditorResourceConversionPlugin {

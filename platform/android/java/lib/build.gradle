@@ -13,9 +13,13 @@ android {
     compileSdkVersion versions.compileSdk
     buildToolsVersion versions.buildTools
 
+    ndkVersion versions.ndkVersion
+
     defaultConfig {
         minSdkVersion versions.minSdk
         targetSdkVersion versions.targetSdk
+
+        manifestPlaceholders = [godotLibraryVersion: getGodotLibraryVersion()]
     }
 
     compileOptions {
@@ -32,8 +36,10 @@ android {
         exclude 'META-INF/LICENSE'
         exclude 'META-INF/NOTICE'
 
-        // Should be uncommented for development purpose within Android Studio
-        // doNotStrip '**/*.so'
+        // 'doNotStrip' is enabled for development within Android Studio
+        if (shouldNotStrip()) {
+            doNotStrip '**/*.so'
+        }
     }
 
     sourceSets {
@@ -64,10 +70,42 @@ android {
             throw new GradleException("Invalid default abi: " + defaultAbi)
         }
 
+        // Find scons' executable path
+        File sconsExecutableFile = null
+        def sconsName = "scons"
+        def sconsExts = (org.gradle.internal.os.OperatingSystem.current().isWindows()
+            ? [".bat", ".cmd", ".ps1", ".exe"]
+            : [""])
+        logger.lifecycle("Looking for $sconsName executable path")
+        for (ext in sconsExts) {
+            String sconsNameExt = sconsName + ext
+            logger.lifecycle("Checking $sconsNameExt")
+
+            sconsExecutableFile = org.gradle.internal.os.OperatingSystem.current().findInPath(sconsNameExt)
+            if (sconsExecutableFile != null) {
+                // We're done!
+                break
+            }
+
+            // Check all the options in path
+            List<File> allOptions = org.gradle.internal.os.OperatingSystem.current().findAllInPath(sconsNameExt)
+            if (!allOptions.isEmpty()) {
+                // Pick the first option and we're done!
+                sconsExecutableFile = allOptions.get(0)
+                break
+            }
+        }
+
+        if (sconsExecutableFile == null) {
+            throw new GradleException("Unable to find executable path for the '$sconsName' command.")
+        } else {
+            logger.lifecycle("Found executable path for $sconsName: ${sconsExecutableFile.absolutePath}")
+        }
+
         // Creating gradle task to generate the native libraries for the default abi.
         def taskName = getSconsTaskName(buildType)
         tasks.create(name: taskName, type: Exec) {
-            executable "scons" + sconsExt
+            executable sconsExecutableFile.absolutePath
             args "--directory=${pathToRootDir}", "platform=android", "target=${releaseTarget}", "android_arch=${defaultAbi}", "-j" + Runtime.runtime.availableProcessors()
         }
 

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -34,8 +34,8 @@
 #include "core/math/delaunay_2d.h"
 #include "core/math/rect2.h"
 #include "core/math/triangulate.h"
-#include "core/object.h"
-#include "core/vector.h"
+#include "core/object/object.h"
+#include "core/templates/vector.h"
 
 class Geometry2D {
 	Geometry2D();
@@ -145,6 +145,12 @@ public:
 		return p_segment[0] + n * d; // Inside.
 	}
 
+// Disable False Positives in MSVC compiler; we correctly check for 0 here to prevent a division by 0.
+// See: https://github.com/godotengine/godot/pull/44274
+#ifdef _MSC_VER
+#pragma warning(disable : 4723)
+#endif
+
 	static bool line_intersects_line(const Vector2 &p_from_a, const Vector2 &p_dir_a, const Vector2 &p_from_b, const Vector2 &p_dir_b, Vector2 &r_result) {
 		// See http://paulbourke.net/geometry/pointlineplane/
 
@@ -158,6 +164,11 @@ public:
 		r_result = p_from_a + t * p_dir_a;
 		return true;
 	}
+
+// Re-enable division by 0 warning
+#ifdef _MSC_VER
+#pragma warning(default : 4723)
+#endif
 
 	static bool segment_intersects_segment(const Vector2 &p_from_a, const Vector2 &p_to_a, const Vector2 &p_from_b, const Vector2 &p_to_b, Vector2 *r_result) {
 		Vector2 B = p_to_a - p_from_a;
@@ -384,6 +395,45 @@ public:
 		H.resize(k);
 		return H;
 	}
+
+	static Vector<Point2i> bresenham_line(const Point2i &p_start, const Point2i &p_end) {
+		Vector<Point2i> points;
+
+		Vector2i delta = (p_end - p_start).abs() * 2;
+		Vector2i step = (p_end - p_start).sign();
+		Vector2i current = p_start;
+
+		if (delta.x > delta.y) {
+			int err = delta.x / 2;
+
+			for (; current.x != p_end.x; current.x += step.x) {
+				points.push_back(current);
+
+				err -= delta.y;
+				if (err < 0) {
+					current.y += step.y;
+					err += delta.x;
+				}
+			}
+		} else {
+			int err = delta.y / 2;
+
+			for (; current.y != p_end.y; current.y += step.y) {
+				points.push_back(current);
+
+				err -= delta.x;
+				if (err < 0) {
+					current.x += step.x;
+					err += delta.y;
+				}
+			}
+		}
+
+		points.push_back(current);
+
+		return points;
+	}
+
 	static Vector<Vector<Vector2>> decompose_polygon_in_convex(Vector<Point2> polygon);
 
 	static void make_atlas(const Vector<Size2i> &p_rects, Vector<Point2i> &r_result, Size2i &r_size);

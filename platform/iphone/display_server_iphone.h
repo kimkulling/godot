@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -36,7 +36,7 @@
 
 #if defined(VULKAN_ENABLED)
 #include "drivers/vulkan/rendering_device_vulkan.h"
-#include "servers/rendering/rasterizer_rd/rasterizer_rd.h"
+#include "servers/rendering/renderer_rd/renderer_compositor_rd.h"
 
 #include "vulkan_context_iphone.h"
 
@@ -99,7 +99,7 @@ public:
 
 	// MARK: Touches
 
-	void touch_press(int p_idx, int p_x, int p_y, bool p_pressed, bool p_doubleclick);
+	void touch_press(int p_idx, int p_x, int p_y, bool p_pressed, bool p_double_click);
 	void touch_drag(int p_idx, int p_prev_x, int p_prev_y, int p_x, int p_y);
 	void touches_cancelled(int p_idx);
 
@@ -189,12 +189,6 @@ public:
 
 	virtual void screen_set_keep_on(bool p_enable) override;
 	virtual bool screen_is_kept_on() const override;
-
-	virtual Error native_video_play(String p_path, float p_volume, String p_audio_track, String p_subtitle_track, int p_screen = SCREEN_OF_MAIN_WINDOW) override;
-	virtual bool native_video_is_playing() const override;
-	virtual void native_video_pause() override;
-	virtual void native_video_unpause() override;
-	virtual void native_video_stop() override;
 
 	void resize_window(CGSize size);
 };

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -34,7 +34,7 @@ GDCINULL(WebSocketServer);
 
 WebSocketServer::WebSocketServer() {
 	_peer_id = 1;
-	bind_ip = IP_Address("*");
+	bind_ip = IPAddress("*");
 }
 
 WebSocketServer::~WebSocketServer() {
@@ -71,11 +71,11 @@ void WebSocketServer::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("data_received", PropertyInfo(Variant::INT, "id")));
 }
 
-IP_Address WebSocketServer::get_bind_ip() const {
+IPAddress WebSocketServer::get_bind_ip() const {
 	return bind_ip;
 }
 
-void WebSocketServer::set_bind_ip(const IP_Address &p_bind_ip) {
+void WebSocketServer::set_bind_ip(const IPAddress &p_bind_ip) {
 	ERR_FAIL_COND(is_listening());
 	ERR_FAIL_COND(!p_bind_ip.is_valid() && !p_bind_ip.is_wildcard());
 	bind_ip = p_bind_ip;

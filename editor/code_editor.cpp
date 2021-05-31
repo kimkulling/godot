@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,13 +32,13 @@
 
 #include "core/input/input.h"
 #include "core/os/keyboard.h"
-#include "core/string_builder.h"
+#include "core/string/string_builder.h"
 #include "editor/editor_scale.h"
 #include "editor_node.h"
 #include "editor_settings.h"
 #include "scene/gui/margin_container.h"
 #include "scene/gui/separator.h"
-#include "scene/resources/dynamic_font.h"
+#include "scene/resources/font.h"
 
 void GotoLineDialog::popup_find_line(CodeEdit *p_edit) {
 	text_editor = p_edit;
@@ -66,10 +66,10 @@ GotoLineDialog::GotoLineDialog() {
 	set_title(TTR("Go to Line"));
 
 	VBoxContainer *vbc = memnew(VBoxContainer);
-	vbc->set_anchor_and_margin(MARGIN_LEFT, Control::ANCHOR_BEGIN, 8 * EDSCALE);
-	vbc->set_anchor_and_margin(MARGIN_TOP, Control::ANCHOR_BEGIN, 8 * EDSCALE);
-	vbc->set_anchor_and_margin(MARGIN_RIGHT, Control::ANCHOR_END, -8 * EDSCALE);
-	vbc->set_anchor_and_margin(MARGIN_BOTTOM, Control::ANCHOR_END, -8 * EDSCALE);
+	vbc->set_anchor_and_offset(SIDE_LEFT, Control::ANCHOR_BEGIN, 8 * EDSCALE);
+	vbc->set_anchor_and_offset(SIDE_TOP, Control::ANCHOR_BEGIN, 8 * EDSCALE);
+	vbc->set_anchor_and_offset(SIDE_RIGHT, Control::ANCHOR_END, -8 * EDSCALE);
+	vbc->set_anchor_and_offset(SIDE_BOTTOM, Control::ANCHOR_END, -8 * EDSCALE);
 	add_child(vbc);
 
 	Label *l = memnew(Label);
@@ -80,6 +80,8 @@ GotoLineDialog::GotoLineDialog() {
 	vbc->add_child(line);
 	register_text_enter(line);
 	text_editor = nullptr;
+
+	line_label = nullptr;
 
 	set_hide_on_ok(false);
 }
@@ -107,6 +109,8 @@ void FindReplaceBar::_notification(int p_what) {
 }
 
 void FindReplaceBar::_unhandled_input(const Ref<InputEvent> &p_event) {
+	ERR_FAIL_COND(p_event.is_null());
+
 	Ref<InputEventKey> k = p_event;
 	if (!k.is_valid() || !k->is_pressed()) {
 		return;
@@ -138,7 +142,7 @@ bool FindReplaceBar::_search(uint32_t p_flags, int p_from_line, int p_from_col) 
 	bool found = text_editor->search(text, p_flags, p_from_line, p_from_col, line, col);
 
 	if (found) {
-		if (!preserve_cursor) {
+		if (!preserve_cursor && !is_selection_only()) {
 			text_editor->unfold_line(line);
 			text_editor->cursor_set_line(line, false);
 			text_editor->cursor_set_column(col + text.length(), false);
@@ -323,7 +327,7 @@ void FindReplaceBar::_update_results_count() {
 	results_count = 0;
 
 	String searched = get_search_text();
-	if (searched.empty()) {
+	if (searched.is_empty()) {
 		return;
 	}
 
@@ -354,7 +358,7 @@ void FindReplaceBar::_update_results_count() {
 }
 
 void FindReplaceBar::_update_matches_label() {
-	if (search_text->get_text().empty() || results_count == -1) {
+	if (search_text->get_text().is_empty() || results_count == -1) {
 		matches_label->hide();
 	} else {
 		matches_label->show();
@@ -481,13 +485,13 @@ void FindReplaceBar::_show_search(bool p_focus_replace, bool p_show_only) {
 		search_text->set_text(text_editor->get_selection_text());
 	}
 
-	if (!get_search_text().empty()) {
+	if (!get_search_text().is_empty()) {
 		if (p_focus_replace) {
 			replace_text->select_all();
-			replace_text->set_cursor_position(replace_text->get_text().length());
+			replace_text->set_caret_column(replace_text->get_text().length());
 		} else {
 			search_text->select_all();
-			search_text->set_cursor_position(search_text->get_text().length());
+			search_text->set_caret_column(search_text->get_text().length());
 		}
 
 		results_count = -1;
@@ -689,6 +693,8 @@ FindReplaceBar::FindReplaceBar() {
 // This function should be used to handle shortcuts that could otherwise
 // be handled too late if they weren't handled here.
 void CodeTextEditor::_input(const Ref<InputEvent> &event) {
+	ERR_FAIL_COND(event.is_null());
+
 	const Ref<InputEventKey> key_event = event;
 	if (!key_event.is_valid() || !key_event->is_pressed() || !text_editor->has_focus()) {
 		return;
@@ -720,10 +726,10 @@ void CodeTextEditor::_text_editor_gui_input(const Ref<InputEvent> &p_event) {
 	Ref<InputEventMouseButton> mb = p_event;
 
 	if (mb.is_valid()) {
-		if (mb->is_pressed() && mb->get_command()) {
-			if (mb->get_button_index() == BUTTON_WHEEL_UP) {
+		if (mb->is_pressed() && mb->is_command_pressed()) {
+			if (mb->get_button_index() == MOUSE_BUTTON_WHEEL_UP) {
 				_zoom_in();
-			} else if (mb->get_button_index() == BUTTON_WHEEL_DOWN) {
+			} else if (mb->get_button_index() == MOUSE_BUTTON_WHEEL_DOWN) {
 				_zoom_out();
 			}
 		}
@@ -731,17 +737,10 @@ void CodeTextEditor::_text_editor_gui_input(const Ref<InputEvent> &p_event) {
 
 	Ref<InputEventMagnifyGesture> magnify_gesture = p_event;
 	if (magnify_gesture.is_valid()) {
-		Ref<DynamicFont> font = text_editor->get_theme_font("font");
+		font_size = text_editor->get_theme_font_size("font_size");
+		font_size *= powf(magnify_gesture->get_factor(), 0.25);
 
-		if (font.is_valid()) {
-			if (font->get_size() != (int)font_size) {
-				font_size = font->get_size();
-			}
-
-			font_size *= powf(magnify_gesture->get_factor(), 0.25);
-
-			_add_font_size((int)font_size - font->get_size());
-		}
+		_add_font_size((int)font_size - text_editor->get_theme_font_size("font_size"));
 		return;
 	}
 
@@ -779,12 +778,8 @@ void CodeTextEditor::_zoom_changed() {
 }
 
 void CodeTextEditor::_reset_zoom() {
-	Ref<DynamicFont> font = text_editor->get_theme_font("font"); // Reset source font size to default.
-
-	if (font.is_valid()) {
-		EditorSettings::get_singleton()->set("interface/editor/code_font_size", 14);
-		font->set_size(14);
-	}
+	EditorSettings::get_singleton()->set("interface/editor/code_font_size", 14);
+	text_editor->add_theme_font_size_override("font_size", 14 * EDSCALE);
 }
 
 void CodeTextEditor::_line_col_changed() {
@@ -884,7 +879,7 @@ Ref<Texture2D> CodeTextEditor::_get_completion_icon(const ScriptCodeCompletionOp
 			tex = get_theme_icon("MemberMethod", "EditorIcons");
 			break;
 		case ScriptCodeCompletionOption::KIND_PLAIN_TEXT:
-			tex = get_theme_icon("CubeMesh", "EditorIcons");
+			tex = get_theme_icon("BoxMesh", "EditorIcons");
 			break;
 		default:
 			tex = get_theme_icon("String", "EditorIcons");
@@ -900,20 +895,15 @@ void CodeTextEditor::_font_resize_timeout() {
 }
 
 bool CodeTextEditor::_add_font_size(int p_delta) {
-	Ref<DynamicFont> font = text_editor->get_theme_font("font");
+	int old_size = text_editor->get_theme_font_size("font_size");
+	int new_size = CLAMP(old_size + p_delta, 8 * EDSCALE, 96 * EDSCALE);
 
-	if (font.is_valid()) {
-		int new_size = CLAMP(font->get_size() + p_delta, 8 * EDSCALE, 96 * EDSCALE);
-
-		if (new_size != font->get_size()) {
-			EditorSettings::get_singleton()->set("interface/editor/code_font_size", new_size / EDSCALE);
-			font->set_size(new_size);
-		}
-
-		return true;
-	} else {
-		return false;
+	if (new_size != old_size) {
+		EditorSettings::get_singleton()->set("interface/editor/code_font_size", new_size / EDSCALE);
+		text_editor->add_theme_font_size_override("font_size", new_size);
 	}
+
+	return true;
 }
 
 void CodeTextEditor::update_editor_settings() {
@@ -1022,7 +1012,7 @@ void CodeTextEditor::convert_indent_to_spaces() {
 				if (cursor_line == i && cursor_column > j) {
 					cursor_column += indent_size - 1;
 				}
-				line = line.left(j) + indent + line.right(j + 1);
+				line = line.left(j) + indent + line.substr(j + 1);
 			}
 			j++;
 		}
@@ -1066,7 +1056,7 @@ void CodeTextEditor::convert_indent_to_tabs() {
 					if (cursor_line == i && cursor_column > j) {
 						cursor_column -= indent_size;
 					}
-					line = line.left(j - indent_size) + "\t" + line.right(j + 1);
+					line = line.left(j - indent_size) + "\t" + line.substr(j + 1);
 					j = 0;
 					space_count = -1;
 				}
@@ -1124,7 +1114,7 @@ void CodeTextEditor::convert_case(CaseStyle p_case) {
 			new_line = text_editor->get_line(i).left(begin_col) + new_line;
 		}
 		if (i == end) {
-			new_line = new_line + text_editor->get_line(i).right(end_col);
+			new_line = new_line + text_editor->get_line(i).substr(end_col);
 		}
 		text_editor->set_line(i, new_line);
 	}
@@ -1138,6 +1128,7 @@ void CodeTextEditor::move_lines_up() {
 		int from_col = text_editor->get_selection_from_column();
 		int to_line = text_editor->get_selection_to_line();
 		int to_column = text_editor->get_selection_to_column();
+		int cursor_line = text_editor->cursor_get_line();
 
 		for (int i = from_line; i <= to_line; i++) {
 			int line_id = i;
@@ -1155,7 +1146,9 @@ void CodeTextEditor::move_lines_up() {
 		}
 		int from_line_up = from_line > 0 ? from_line - 1 : from_line;
 		int to_line_up = to_line > 0 ? to_line - 1 : to_line;
+		int cursor_line_up = cursor_line > 0 ? cursor_line - 1 : cursor_line;
 		text_editor->select(from_line_up, from_col, to_line_up, to_column);
+		text_editor->cursor_set_line(cursor_line_up);
 	} else {
 		int line_id = text_editor->cursor_get_line();
 		int next_id = line_id - 1;
@@ -1181,6 +1174,7 @@ void CodeTextEditor::move_lines_down() {
 		int from_col = text_editor->get_selection_from_column();
 		int to_line = text_editor->get_selection_to_line();
 		int to_column = text_editor->get_selection_to_column();
+		int cursor_line = text_editor->cursor_get_line();
 
 		for (int i = to_line; i >= from_line; i--) {
 			int line_id = i;
@@ -1198,7 +1192,9 @@ void CodeTextEditor::move_lines_down() {
 		}
 		int from_line_down = from_line < text_editor->get_line_count() ? from_line + 1 : from_line;
 		int to_line_down = to_line < text_editor->get_line_count() ? to_line + 1 : to_line;
+		int cursor_line_down = cursor_line < text_editor->get_line_count() ? cursor_line + 1 : cursor_line;
 		text_editor->select(from_line_down, from_col, to_line_down, to_column);
+		text_editor->cursor_set_line(cursor_line_down);
 	} else {
 		int line_id = text_editor->cursor_get_line();
 		int next_id = line_id + 1;
@@ -1317,7 +1313,7 @@ void CodeTextEditor::toggle_inline_comment(const String &delimiter) {
 		for (int i = begin; i <= end; i++) {
 			String line_text = text_editor->get_line(i);
 
-			if (line_text.strip_edges().empty()) {
+			if (line_text.strip_edges().is_empty()) {
 				line_text = delimiter;
 			} else {
 				if (is_commented) {
@@ -1478,27 +1474,86 @@ void CodeTextEditor::goto_error() {
 	}
 }
 
+void CodeTextEditor::_update_text_editor_theme() {
+	text_editor->add_theme_color_override("background_color", EDITOR_GET("text_editor/highlighting/background_color"));
+	text_editor->add_theme_color_override("completion_background_color", EDITOR_GET("text_editor/highlighting/completion_background_color"));
+	text_editor->add_theme_color_override("completion_selected_color", EDITOR_GET("text_editor/highlighting/completion_selected_color"));
+	text_editor->add_theme_color_override("completion_existing_color", EDITOR_GET("text_editor/highlighting/completion_existing_color"));
+	text_editor->add_theme_color_override("completion_scroll_color", EDITOR_GET("text_editor/highlighting/completion_scroll_color"));
+	text_editor->add_theme_color_override("completion_font_color", EDITOR_GET("text_editor/highlighting/completion_font_color"));
+	text_editor->add_theme_color_override("font_color", EDITOR_GET("text_editor/highlighting/text_color"));
+	text_editor->add_theme_color_override("line_number_color", EDITOR_GET("text_editor/highlighting/line_number_color"));
+	text_editor->add_theme_color_override("caret_color", EDITOR_GET("text_editor/highlighting/caret_color"));
+	text_editor->add_theme_color_override("caret_background_color", EDITOR_GET("text_editor/highlighting/caret_background_color"));
+	text_editor->add_theme_color_override("font_selected_color", EDITOR_GET("text_editor/highlighting/text_selected_color"));
+	text_editor->add_theme_color_override("selection_color", EDITOR_GET("text_editor/highlighting/selection_color"));
+	text_editor->add_theme_color_override("brace_mismatch_color", EDITOR_GET("text_editor/highlighting/brace_mismatch_color"));
+	text_editor->add_theme_color_override("current_line_color", EDITOR_GET("text_editor/highlighting/current_line_color"));
+	text_editor->add_theme_color_override("line_length_guideline_color", EDITOR_GET("text_editor/highlighting/line_length_guideline_color"));
+	text_editor->add_theme_color_override("word_highlighted_color", EDITOR_GET("text_editor/highlighting/word_highlighted_color"));
+	text_editor->add_theme_color_override("bookmark_color", EDITOR_GET("text_editor/highlighting/bookmark_color"));
+	text_editor->add_theme_color_override("breakpoint_color", EDITOR_GET("text_editor/highlighting/breakpoint_color"));
+	text_editor->add_theme_color_override("executing_line_color", EDITOR_GET("text_editor/highlighting/executing_line_color"));
+	text_editor->add_theme_color_override("code_folding_color", EDITOR_GET("text_editor/highlighting/code_folding_color"));
+	text_editor->add_theme_color_override("search_result_color", EDITOR_GET("text_editor/highlighting/search_result_color"));
+	text_editor->add_theme_color_override("search_result_border_color", EDITOR_GET("text_editor/highlighting/search_result_border_color"));
+	text_editor->add_theme_constant_override("line_spacing", EDITOR_DEF("text_editor/theme/line_spacing", 6));
+	emit_signal("load_theme_settings");
+	_load_theme_settings();
+}
+
 void CodeTextEditor::_update_font() {
 	text_editor->add_theme_font_override("font", get_theme_font("source", "EditorFonts"));
+	text_editor->add_theme_font_size_override("font_size", get_theme_font_size("source_size", "EditorFonts"));
 
 	error->add_theme_font_override("font", get_theme_font("status_source", "EditorFonts"));
+	error->add_theme_font_size_override("font_size", get_theme_font_size("status_source_size", "EditorFonts"));
 	error->add_theme_color_override("font_color", get_theme_color("error_color", "Editor"));
 
 	Ref<Font> status_bar_font = get_theme_font("status_source", "EditorFonts");
+	int status_bar_font_size = get_theme_font_size("status_source_size", "EditorFonts");
 	error->add_theme_font_override("font", status_bar_font);
+	error->add_theme_font_size_override("font_size", status_bar_font_size);
 	int count = status_bar->get_child_count();
 	for (int i = 0; i < count; i++) {
 		Control *n = Object::cast_to<Control>(status_bar->get_child(i));
 		if (n) {
 			n->add_theme_font_override("font", status_bar_font);
+			n->add_theme_font_size_override("font_size", status_bar_font_size);
 		}
 	}
 }
 
 void CodeTextEditor::_on_settings_change() {
+	_update_text_editor_theme();
 	_update_font();
 
 	font_size = EditorSettings::get_singleton()->get("interface/editor/code_font_size");
+
+	int ot_mode = EditorSettings::get_singleton()->get("interface/editor/code_font_contextual_ligatures");
+	switch (ot_mode) {
+		case 1: { // Disable ligatures.
+			text_editor->clear_opentype_features();
+			text_editor->set_opentype_feature("calt", 0);
+		} break;
+		case 2: { // Custom.
+			text_editor->clear_opentype_features();
+			Vector<String> subtag = String(EditorSettings::get_singleton()->get("interface/editor/code_font_custom_opentype_features")).split(",");
+			Dictionary ftrs;
+			for (int i = 0; i < subtag.size(); i++) {
+				Vector<String> subtag_a = subtag[i].split("=");
+				if (subtag_a.size() == 2) {
+					text_editor->set_opentype_feature(subtag_a[0], subtag_a[1].to_int());
+				} else if (subtag_a.size() == 1) {
+					text_editor->set_opentype_feature(subtag_a[0], 1);
+				}
+			}
+		} break;
+		default: { // Default.
+			text_editor->clear_opentype_features();
+			text_editor->set_opentype_feature("calt", 1);
+		} break;
+	}
 
 	// Auto brace completion.
 	text_editor->set_auto_brace_completion(
@@ -1526,7 +1581,7 @@ void CodeTextEditor::validate_script() {
 
 void CodeTextEditor::_warning_label_gui_input(const Ref<InputEvent> &p_event) {
 	Ref<InputEventMouseButton> mb = p_event;
-	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == BUTTON_LEFT) {
+	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MOUSE_BUTTON_LEFT) {
 		_warning_button_pressed();
 	}
 }
@@ -1541,26 +1596,27 @@ void CodeTextEditor::_set_show_warnings_panel(bool p_show) {
 }
 
 void CodeTextEditor::_toggle_scripts_pressed() {
-	toggle_scripts_button->set_icon(ScriptEditor::get_singleton()->toggle_scripts_panel() ? get_theme_icon("Back", "EditorIcons") : get_theme_icon("Forward", "EditorIcons"));
+	if (is_layout_rtl()) {
+		toggle_scripts_button->set_icon(ScriptEditor::get_singleton()->toggle_scripts_panel() ? get_theme_icon("Forward", "EditorIcons") : get_theme_icon("Back", "EditorIcons"));
+	} else {
+		toggle_scripts_button->set_icon(ScriptEditor::get_singleton()->toggle_scripts_panel() ? get_theme_icon("Back", "EditorIcons") : get_theme_icon("Forward", "EditorIcons"));
+	}
 }
 
 void CodeTextEditor::_error_pressed(const Ref<InputEvent> &p_event) {
 	Ref<InputEventMouseButton> mb = p_event;
-	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == BUTTON_LEFT) {
+	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MOUSE_BUTTON_LEFT) {
 		goto_error();
 	}
 }
 
 void CodeTextEditor::_notification(int p_what) {
 	switch (p_what) {
-		case EditorSettings::NOTIFICATION_EDITOR_SETTINGS_CHANGED: {
-			_load_theme_settings();
-			emit_signal("load_theme_settings");
-		} break;
 		case NOTIFICATION_THEME_CHANGED: {
 			if (toggle_scripts_button->is_visible()) {
 				update_toggle_scripts_button();
 			}
+			_update_text_editor_theme();
 			_update_font();
 		} break;
 		case NOTIFICATION_ENTER_TREE: {
@@ -1662,7 +1718,11 @@ void CodeTextEditor::show_toggle_scripts_button() {
 }
 
 void CodeTextEditor::update_toggle_scripts_button() {
-	toggle_scripts_button->set_icon(ScriptEditor::get_singleton()->is_scripts_panel_toggled() ? get_theme_icon("Back", "EditorIcons") : get_theme_icon("Forward", "EditorIcons"));
+	if (is_layout_rtl()) {
+		toggle_scripts_button->set_icon(ScriptEditor::get_singleton()->is_scripts_panel_toggled() ? get_theme_icon("Forward", "EditorIcons") : get_theme_icon("Back", "EditorIcons"));
+	} else {
+		toggle_scripts_button->set_icon(ScriptEditor::get_singleton()->is_scripts_panel_toggled() ? get_theme_icon("Back", "EditorIcons") : get_theme_icon("Forward", "EditorIcons"));
+	}
 	toggle_scripts_button->set_tooltip(TTR("Toggle Scripts Panel") + " (" + ED_GET_SHORTCUT("script_editor/toggle_scripts_panel")->get_as_text() + ")");
 }
 
@@ -1675,6 +1735,31 @@ CodeTextEditor::CodeTextEditor() {
 	text_editor = memnew(CodeEdit);
 	add_child(text_editor);
 	text_editor->set_v_size_flags(SIZE_EXPAND_FILL);
+
+	int ot_mode = EditorSettings::get_singleton()->get("interface/editor/code_font_contextual_ligatures");
+	switch (ot_mode) {
+		case 1: { // Disable ligatures.
+			text_editor->clear_opentype_features();
+			text_editor->set_opentype_feature("calt", 0);
+		} break;
+		case 2: { // Custom.
+			text_editor->clear_opentype_features();
+			Vector<String> subtag = String(EditorSettings::get_singleton()->get("interface/editor/code_font_custom_opentype_features")).split(",");
+			Dictionary ftrs;
+			for (int i = 0; i < subtag.size(); i++) {
+				Vector<String> subtag_a = subtag[i].split("=");
+				if (subtag_a.size() == 2) {
+					text_editor->set_opentype_feature(subtag_a[0], subtag_a[1].to_int());
+				} else if (subtag_a.size() == 1) {
+					text_editor->set_opentype_feature(subtag_a[0], 1);
+				}
+			}
+		} break;
+		default: { // Default.
+			text_editor->clear_opentype_features();
+			text_editor->set_opentype_feature("calt", 1);
+		} break;
+	}
 
 	// Added second so it opens at the bottom, so it won't shift the entire text editor when opening.
 	find_replace_bar = memnew(FindReplaceBar);
@@ -1744,6 +1829,7 @@ CodeTextEditor::CodeTextEditor() {
 	warning_count_label->set_tooltip(TTR("Warnings"));
 	warning_count_label->add_theme_color_override("font_color", EditorNode::get_singleton()->get_gui_base()->get_theme_color("warning_color", "Editor"));
 	warning_count_label->add_theme_font_override("font", EditorNode::get_singleton()->get_gui_base()->get_theme_font("status_source", "EditorFonts"));
+	warning_count_label->add_theme_font_size_override("font_size", EditorNode::get_singleton()->get_gui_base()->get_theme_font_size("status_source_size", "EditorFonts"));
 	warning_count_label->connect("gui_input", callable_mp(this, &CodeTextEditor::_warning_label_gui_input));
 
 	is_warnings_panel_opened = false;
@@ -1754,6 +1840,7 @@ CodeTextEditor::CodeTextEditor() {
 	status_bar->add_child(line_and_col_txt);
 	line_and_col_txt->set_v_size_flags(SIZE_EXPAND | SIZE_SHRINK_CENTER);
 	line_and_col_txt->add_theme_font_override("font", EditorNode::get_singleton()->get_gui_base()->get_theme_font("status_source", "EditorFonts"));
+	line_and_col_txt->add_theme_font_size_override("font_size", EditorNode::get_singleton()->get_gui_base()->get_theme_font_size("status_source_size", "EditorFonts"));
 	line_and_col_txt->set_tooltip(TTR("Line and column numbers."));
 	line_and_col_txt->set_mouse_filter(MOUSE_FILTER_STOP);
 

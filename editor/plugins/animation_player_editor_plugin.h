@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -105,6 +105,8 @@ class AnimationPlayerEditor : public VBoxContainer {
 	Label *name_title;
 	UndoRedo *undo_redo;
 	Ref<Texture2D> autoplay_icon;
+	Ref<Texture2D> reset_icon;
+	Ref<ImageTexture> autoplay_reset_icon;
 	bool last_active;
 	float timeline_position;
 
@@ -113,9 +115,9 @@ class AnimationPlayerEditor : public VBoxContainer {
 	int current_option;
 
 	struct BlendEditor {
-		AcceptDialog *dialog;
-		Tree *tree;
-		OptionButton *next;
+		AcceptDialog *dialog = nullptr;
+		Tree *tree = nullptr;
+		OptionButton *next = nullptr;
 
 	} blend_editor;
 
@@ -131,13 +133,13 @@ class AnimationPlayerEditor : public VBoxContainer {
 	// Onion skinning.
 	struct {
 		// Settings.
-		bool enabled;
-		bool past;
-		bool future;
-		int steps;
-		bool differences_only;
-		bool force_white_modulate;
-		bool include_gizmos;
+		bool enabled = false;
+		bool past = false;
+		bool future = false;
+		int steps = 0;
+		bool differences_only = false;
+		bool force_white_modulate = false;
+		bool include_gizmos = false;
 
 		int get_needed_capture_count() const {
 			// 'Differences only' needs a capture of the present.
@@ -145,8 +147,8 @@ class AnimationPlayerEditor : public VBoxContainer {
 		}
 
 		// Rendering.
-		int64_t last_frame;
-		int can_overlay;
+		int64_t last_frame = 0;
+		int can_overlay = 0;
 		Size2 capture_size;
 		Vector<RID> captures;
 		Vector<bool> captures_valid;
@@ -185,7 +187,7 @@ class AnimationPlayerEditor : public VBoxContainer {
 	void _scale_changed(const String &p_scale);
 	void _dialog_action(String p_file);
 	void _seek_frame_changed(const String &p_frame);
-	void _seek_value_changed(float p_value, bool p_set = false);
+	void _seek_value_changed(float p_value, bool p_set = false, bool p_timeline_only = false);
 	void _blend_editor_next_changed(const int p_idx);
 
 	void _list_changed();
@@ -195,7 +197,7 @@ class AnimationPlayerEditor : public VBoxContainer {
 
 	void _animation_player_changed(Object *p_pl);
 
-	void _animation_key_editor_seek(float p_pos, bool p_drag);
+	void _animation_key_editor_seek(float p_pos, bool p_drag, bool p_timeline_only = false);
 	void _animation_key_editor_anim_len_changed(float p_len);
 
 	void _unhandled_key_input(const Ref<InputEvent> &p_ev);

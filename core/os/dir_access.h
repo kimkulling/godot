@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,8 +31,8 @@
 #ifndef DIR_ACCESS_H
 #define DIR_ACCESS_H
 
+#include "core/string/ustring.h"
 #include "core/typedefs.h"
-#include "core/ustring.h"
 
 //@ TODO, excellent candidate for THREAD_SAFE MACRO, should go through all these and add THREAD_SAFE where it applies
 class DirAccess {
@@ -50,14 +50,13 @@ private:
 	AccessType _access_type = ACCESS_FILESYSTEM;
 	static CreateFunc create_func[ACCESS_MAX]; ///< set this to instance a filesystem object
 
-	Error _copy_dir(DirAccess *p_target_da, String p_to, int p_chmod_flags);
+	Error _copy_dir(DirAccess *p_target_da, String p_to, int p_chmod_flags, bool p_copy_links);
 
 protected:
 	String _get_root_path() const;
 	String _get_root_string() const;
 
 	String fix_path(String p_path) const;
-	bool next_is_dir;
 
 	template <class T>
 	static DirAccess *_create_builtin() {
@@ -85,13 +84,19 @@ public:
 
 	virtual bool file_exists(String p_file) = 0;
 	virtual bool dir_exists(String p_dir) = 0;
+	virtual bool is_readable(String p_dir) { return true; };
+	virtual bool is_writable(String p_dir) { return true; };
 	static bool exists(String p_dir);
-	virtual size_t get_space_left() = 0;
+	virtual uint64_t get_space_left() = 0;
 
-	Error copy_dir(String p_from, String p_to, int p_chmod_flags = -1);
+	Error copy_dir(String p_from, String p_to, int p_chmod_flags = -1, bool p_copy_links = false);
 	virtual Error copy(String p_from, String p_to, int p_chmod_flags = -1);
 	virtual Error rename(String p_from, String p_to) = 0;
 	virtual Error remove(String p_name) = 0;
+
+	virtual bool is_link(String p_file) = 0;
+	virtual String read_link(String p_file) = 0;
+	virtual Error create_link(String p_source, String p_target) = 0;
 
 	// Meant for editor code when we want to quickly remove a file without custom
 	// handling (e.g. removing a cache file).

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -69,7 +69,7 @@ private:
 	static GDScriptLanguageProtocol *singleton;
 
 	HashMap<int, Ref<LSPeer>> clients;
-	Ref<TCP_Server> server;
+	Ref<TCPServer> server;
 	int latest_client_id = 0;
 	int next_client_id = 0;
 
@@ -97,7 +97,7 @@ public:
 	_FORCE_INLINE_ bool is_initialized() const { return _initialized; }
 
 	void poll();
-	Error start(int p_port, const IP_Address &p_bind_ip);
+	Error start(int p_port, const IPAddress &p_bind_ip);
 	void stop();
 
 	void notify_client(const String &p_method, const Variant &p_params = Variant(), int p_client_id = -1);

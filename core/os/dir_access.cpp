@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,10 +30,10 @@
 
 #include "dir_access.h"
 
+#include "core/config/project_settings.h"
 #include "core/os/file_access.h"
 #include "core/os/memory.h"
 #include "core/os/os.h"
-#include "core/project_settings.h"
 
 String DirAccess::_get_root_path() const {
 	switch (_access_type) {
@@ -170,7 +170,7 @@ Error DirAccess::make_dir_recursive(String p_dir) {
 		curpath = curpath.plus_file(subdirs[i]);
 		Error err = make_dir(curpath);
 		if (err != OK && err != ERR_ALREADY_EXISTS) {
-			ERR_FAIL_V(err);
+			ERR_FAIL_V_MSG(err, "Could not create directory: " + curpath);
 		}
 	}
 
@@ -331,7 +331,7 @@ public:
 	}
 };
 
-Error DirAccess::_copy_dir(DirAccess *p_target_da, String p_to, int p_chmod_flags) {
+Error DirAccess::_copy_dir(DirAccess *p_target_da, String p_to, int p_chmod_flags, bool p_copy_links) {
 	List<String> dirs;
 
 	String curdir = get_current_dir();
@@ -339,7 +339,9 @@ Error DirAccess::_copy_dir(DirAccess *p_target_da, String p_to, int p_chmod_flag
 	String n = get_next();
 	while (n != String()) {
 		if (n != "." && n != "..") {
-			if (current_is_dir()) {
+			if (p_copy_links && is_link(get_current_dir().plus_file(n))) {
+				create_link(read_link(get_current_dir().plus_file(n)), p_to + n);
+			} else if (current_is_dir()) {
 				dirs.push_back(n);
 			} else {
 				const String &rel_path = n;
@@ -371,7 +373,7 @@ Error DirAccess::_copy_dir(DirAccess *p_target_da, String p_to, int p_chmod_flag
 		Error err = change_dir(E->get());
 		ERR_FAIL_COND_V_MSG(err != OK, err, "Cannot change current directory to '" + E->get() + "'.");
 
-		err = _copy_dir(p_target_da, p_to + rel_path + "/", p_chmod_flags);
+		err = _copy_dir(p_target_da, p_to + rel_path + "/", p_chmod_flags, p_copy_links);
 		if (err) {
 			change_dir("..");
 			ERR_FAIL_V_MSG(err, "Failed to copy recursively.");
@@ -383,7 +385,7 @@ Error DirAccess::_copy_dir(DirAccess *p_target_da, String p_to, int p_chmod_flag
 	return OK;
 }
 
-Error DirAccess::copy_dir(String p_from, String p_to, int p_chmod_flags) {
+Error DirAccess::copy_dir(String p_from, String p_to, int p_chmod_flags, bool p_copy_links) {
 	ERR_FAIL_COND_V_MSG(!dir_exists(p_from), ERR_FILE_NOT_FOUND, "Source directory doesn't exist.");
 
 	DirAccess *target_da = DirAccess::create_for_path(p_to);
@@ -402,7 +404,7 @@ Error DirAccess::copy_dir(String p_from, String p_to, int p_chmod_flags) {
 	}
 
 	DirChanger dir_changer(this, p_from);
-	Error err = _copy_dir(target_da, p_to, p_chmod_flags);
+	Error err = _copy_dir(target_da, p_to, p_chmod_flags, p_copy_links);
 	memdelete(target_da);
 
 	return err;

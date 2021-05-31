@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,11 +30,11 @@
 
 #include "file_access.h"
 
+#include "core/config/project_settings.h"
 #include "core/crypto/crypto_core.h"
 #include "core/io/file_access_pack.h"
 #include "core/io/marshalls.h"
 #include "core/os/os.h"
-#include "core/project_settings.h"
 
 FileAccess::CreateFunc FileAccess::create_func[ACCESS_MAX] = { nullptr, nullptr };
 
@@ -51,7 +51,7 @@ FileAccess *FileAccess::create(AccessType p_access) {
 }
 
 bool FileAccess::exists(const String &p_name) {
-	if (PackedData::get_singleton() && PackedData::get_singleton()->has_path(p_name)) {
+	if (PackedData::get_singleton() && !PackedData::get_singleton()->is_disabled() && PackedData::get_singleton()->has_path(p_name)) {
 		return true;
 	}
 
@@ -254,8 +254,8 @@ class CharBuffer {
 	Vector<char> vector;
 	char stack_buffer[256];
 
-	char *buffer;
-	int capacity;
+	char *buffer = nullptr;
+	int capacity = 0;
 	int written = 0;
 
 	bool grow() {
@@ -349,7 +349,7 @@ Vector<String> FileAccess::get_csv_line(const String &p_delim) const {
 			strings.push_back(current);
 			current = String();
 		} else if (c == '"') {
-			if (l[i + 1] == '"') {
+			if (l[i + 1] == '"' && in_quote) {
 				s[0] = '"';
 				current += s;
 				i++;
@@ -367,8 +367,10 @@ Vector<String> FileAccess::get_csv_line(const String &p_delim) const {
 	return strings;
 }
 
-int FileAccess::get_buffer(uint8_t *p_dst, int p_length) const {
-	int i = 0;
+uint64_t FileAccess::get_buffer(uint8_t *p_dst, uint64_t p_length) const {
+	ERR_FAIL_COND_V(!p_dst && p_length > 0, -1);
+
+	uint64_t i = 0;
 	for (i = 0; i < p_length && !eof_reached(); i++) {
 		p_dst[i] = get_8();
 	}
@@ -378,11 +380,11 @@ int FileAccess::get_buffer(uint8_t *p_dst, int p_length) const {
 
 String FileAccess::get_as_utf8_string() const {
 	Vector<uint8_t> sourcef;
-	int len = get_len();
+	uint64_t len = get_length();
 	sourcef.resize(len + 1);
 
 	uint8_t *w = sourcef.ptrw();
-	int r = get_buffer(w, len);
+	uint64_t r = get_buffer(w, len);
 	ERR_FAIL_COND_V(r != len, String());
 	w[len] = 0;
 
@@ -456,7 +458,7 @@ void FileAccess::store_double(double p_dest) {
 }
 
 uint64_t FileAccess::get_modified_time(const String &p_file) {
-	if (PackedData::get_singleton() && !PackedData::get_singleton()->is_disabled() && PackedData::get_singleton()->has_path(p_file)) {
+	if (PackedData::get_singleton() && !PackedData::get_singleton()->is_disabled() && (PackedData::get_singleton()->has_path(p_file) || PackedData::get_singleton()->has_directory(p_file))) {
 		return 0;
 	}
 
@@ -469,7 +471,7 @@ uint64_t FileAccess::get_modified_time(const String &p_file) {
 }
 
 uint32_t FileAccess::get_unix_permissions(const String &p_file) {
-	if (PackedData::get_singleton() && !PackedData::get_singleton()->is_disabled() && PackedData::get_singleton()->has_path(p_file)) {
+	if (PackedData::get_singleton() && !PackedData::get_singleton()->is_disabled() && (PackedData::get_singleton()->has_path(p_file) || PackedData::get_singleton()->has_directory(p_file))) {
 		return 0;
 	}
 
@@ -482,6 +484,10 @@ uint32_t FileAccess::get_unix_permissions(const String &p_file) {
 }
 
 Error FileAccess::set_unix_permissions(const String &p_file, uint32_t p_permissions) {
+	if (PackedData::get_singleton() && !PackedData::get_singleton()->is_disabled() && (PackedData::get_singleton()->has_path(p_file) || PackedData::get_singleton()->has_directory(p_file))) {
+		return ERR_UNAVAILABLE;
+	}
+
 	FileAccess *fa = create_for_path(p_file);
 	ERR_FAIL_COND_V_MSG(!fa, ERR_CANT_CREATE, "Cannot create FileAccess for path '" + p_file + "'.");
 
@@ -544,8 +550,8 @@ void FileAccess::store_csv_line(const Vector<String> &p_values, const String &p_
 	store_line(line);
 }
 
-void FileAccess::store_buffer(const uint8_t *p_src, int p_length) {
-	for (int i = 0; i < p_length; i++) {
+void FileAccess::store_buffer(const uint8_t *p_src, uint64_t p_length) {
+	for (uint64_t i = 0; i < p_length; i++) {
 		store_8(p_src[i]);
 	}
 }
@@ -559,7 +565,7 @@ Vector<uint8_t> FileAccess::get_file_as_array(const String &p_path, Error *r_err
 		ERR_FAIL_V_MSG(Vector<uint8_t>(), "Can't open file from path '" + String(p_path) + "'.");
 	}
 	Vector<uint8_t> data;
-	data.resize(f->get_len());
+	data.resize(f->get_length());
 	f->get_buffer(data.ptrw(), data.size());
 	memdelete(f);
 	return data;
@@ -595,7 +601,7 @@ String FileAccess::get_md5(const String &p_file) {
 	unsigned char step[32768];
 
 	while (true) {
-		int br = f->get_buffer(step, 32768);
+		uint64_t br = f->get_buffer(step, 32768);
 		if (br > 0) {
 			ctx.update(step, br);
 		}
@@ -623,7 +629,7 @@ String FileAccess::get_multiple_md5(const Vector<String> &p_file) {
 		unsigned char step[32768];
 
 		while (true) {
-			int br = f->get_buffer(step, 32768);
+			uint64_t br = f->get_buffer(step, 32768);
 			if (br > 0) {
 				ctx.update(step, br);
 			}
@@ -652,7 +658,7 @@ String FileAccess::get_sha256(const String &p_file) {
 	unsigned char step[32768];
 
 	while (true) {
-		int br = f->get_buffer(step, 32768);
+		uint64_t br = f->get_buffer(step, 32768);
 		if (br > 0) {
 			ctx.update(step, br);
 		}

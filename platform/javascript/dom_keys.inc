@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -159,8 +159,8 @@ int dom_code2godot_scancode(EM_UTF8 const p_code[32], EM_UTF8 const p_key[32], b
 	DOM2GODOT("Backspace", BACKSPACE);
 	DOM2GODOT("CapsLock", CAPSLOCK);
 	DOM2GODOT("ContextMenu", MENU);
-	DOM2GODOT("ControlLeft", CONTROL);
-	DOM2GODOT("ControlRight", CONTROL);
+	DOM2GODOT("ControlLeft", CTRL);
+	DOM2GODOT("ControlRight", CTRL);
 	DOM2GODOT("Enter", ENTER);
 	DOM2GODOT("MetaLeft", SUPER_L);
 	DOM2GODOT("MetaRight", SUPER_R);

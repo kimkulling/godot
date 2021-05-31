@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,12 +30,12 @@
 
 #include "display_server_iphone.h"
 #import "app_delegate.h"
+#include "core/config/project_settings.h"
 #include "core/io/file_access_pack.h"
-#include "core/project_settings.h"
 #import "device_metrics.h"
 #import "godot_view.h"
 #include "ios.h"
-#import "native_video_view.h"
+#import "keyboard_input_view.h"
 #include "os_iphone.h"
 #import "view_controller.h"
 
@@ -72,7 +72,7 @@ DisplayServerIPhone::DisplayServerIPhone(const String &p_rendering_driver, Displ
 			//        return ERR_UNAVAILABLE;
 		}
 
-		//    rendering_server = memnew(RenderingServerRaster);
+		//    rendering_server = memnew(RenderingServerDefault);
 		//    // FIXME: Reimplement threaded rendering
 		//    if (get_render_thread_mode() != RENDER_THREAD_UNSAFE) {
 		//        rendering_server = memnew(RenderingServerWrapMT(rendering_server,
@@ -117,7 +117,7 @@ DisplayServerIPhone::DisplayServerIPhone(const String &p_rendering_driver, Displ
 		rendering_device_vulkan = memnew(RenderingDeviceVulkan);
 		rendering_device_vulkan->initialize(context_vulkan);
 
-		RasterizerRD::make_current();
+		RendererCompositorRD::make_current();
 	}
 #endif
 
@@ -135,13 +135,13 @@ DisplayServerIPhone::~DisplayServerIPhone() {
 		if (rendering_device_vulkan) {
 			rendering_device_vulkan->finalize();
 			memdelete(rendering_device_vulkan);
-			rendering_device_vulkan = NULL;
+			rendering_device_vulkan = nullptr;
 		}
 
 		if (context_vulkan) {
 			context_vulkan->window_destroy(MAIN_WINDOW_ID);
 			memdelete(context_vulkan);
-			context_vulkan = NULL;
+			context_vulkan = nullptr;
 		}
 	}
 #endif
@@ -221,7 +221,7 @@ void DisplayServerIPhone::_window_callback(const Callable &p_callable, const Var
 
 // MARK: Touches
 
-void DisplayServerIPhone::touch_press(int p_idx, int p_x, int p_y, bool p_pressed, bool p_doubleclick) {
+void DisplayServerIPhone::touch_press(int p_idx, int p_x, int p_y, bool p_pressed, bool p_double_click) {
 	if (!GLOBAL_DEF("debug/disable_touch", false)) {
 		Ref<InputEventScreenTouch> ev;
 		ev.instance();
@@ -304,7 +304,6 @@ bool DisplayServerIPhone::has_feature(Feature p_feature) const {
 		// case FEATURE_MOUSE_WARP:
 		// case FEATURE_NATIVE_DIALOG:
 		// case FEATURE_NATIVE_ICON:
-		// case FEATURE_NATIVE_VIDEO:
 		// case FEATURE_WINDOW_TRANSPARENCY:
 		case FEATURE_CLIPBOARD:
 		case FEATURE_KEEP_SCREEN_ON:
@@ -529,11 +528,17 @@ bool DisplayServerIPhone::screen_is_touchscreen(int p_screen) const {
 }
 
 void DisplayServerIPhone::virtual_keyboard_show(const String &p_existing_text, const Rect2 &p_screen_rect, bool p_multiline, int p_max_length, int p_cursor_start, int p_cursor_end) {
-	[AppDelegate.viewController.godotView becomeFirstResponderWithString:p_existing_text];
+	NSString *existingString = [[NSString alloc] initWithUTF8String:p_existing_text.utf8().get_data()];
+
+	[AppDelegate.viewController.keyboardView
+			becomeFirstResponderWithString:existingString
+								 multiline:p_multiline
+							   cursorStart:p_cursor_start
+								 cursorEnd:p_cursor_end];
 }
 
 void DisplayServerIPhone::virtual_keyboard_hide() {
-	[AppDelegate.viewController.godotView resignFirstResponder];
+	[AppDelegate.viewController.keyboardView resignFirstResponder];
 }
 
 void DisplayServerIPhone::virtual_keyboard_set_height(int height) {
@@ -560,69 +565,6 @@ void DisplayServerIPhone::screen_set_keep_on(bool p_enable) {
 
 bool DisplayServerIPhone::screen_is_kept_on() const {
 	return [UIApplication sharedApplication].idleTimerDisabled;
-}
-
-Error DisplayServerIPhone::native_video_play(String p_path, float p_volume, String p_audio_track, String p_subtitle_track, int p_screen) {
-	FileAccess *f = FileAccess::open(p_path, FileAccess::READ);
-	bool exists = f && f->is_open();
-
-	String user_data_dir = OSIPhone::get_singleton()->get_user_data_dir();
-
-	if (!exists) {
-		return FAILED;
-	}
-
-	String tempFile = OSIPhone::get_singleton()->get_user_data_dir();
-
-	if (p_path.begins_with("res://")) {
-		if (PackedData::get_singleton()->has_path(p_path)) {
-			printf("Unable to play %s using the native player as it resides in a .pck file\n", p_path.utf8().get_data());
-			return ERR_INVALID_PARAMETER;
-		} else {
-			p_path = p_path.replace("res:/", ProjectSettings::get_singleton()->get_resource_path());
-		}
-	} else if (p_path.begins_with("user://")) {
-		p_path = p_path.replace("user:/", user_data_dir);
-	}
-
-	memdelete(f);
-
-	printf("Playing video: %s\n", p_path.utf8().get_data());
-
-	String file_path = ProjectSettings::get_singleton()->globalize_path(p_path);
-
-	NSString *filePath = [[NSString alloc] initWithUTF8String:file_path.utf8().get_data()];
-	NSString *audioTrack = [NSString stringWithUTF8String:p_audio_track.utf8()];
-	NSString *subtitleTrack = [NSString stringWithUTF8String:p_subtitle_track.utf8()];
-
-	if (![AppDelegate.viewController playVideoAtPath:filePath
-											  volume:p_volume
-											   audio:audioTrack
-											subtitle:subtitleTrack]) {
-		return OK;
-	}
-
-	return FAILED;
-}
-
-bool DisplayServerIPhone::native_video_is_playing() const {
-	return [AppDelegate.viewController.videoView isVideoPlaying];
-}
-
-void DisplayServerIPhone::native_video_pause() {
-	if (native_video_is_playing()) {
-		[AppDelegate.viewController.videoView pauseVideo];
-	}
-}
-
-void DisplayServerIPhone::native_video_unpause() {
-	[AppDelegate.viewController.videoView unpauseVideo];
-};
-
-void DisplayServerIPhone::native_video_stop() {
-	if (native_video_is_playing()) {
-		[AppDelegate.viewController.videoView stopVideo];
-	}
 }
 
 void DisplayServerIPhone::resize_window(CGSize viewSize) {

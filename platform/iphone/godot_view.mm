@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,7 +30,7 @@
 
 #import "godot_view.h"
 #include "core/os/keyboard.h"
-#include "core/ustring.h"
+#include "core/string/ustring.h"
 #import "display_layer.h"
 #include "display_server_iphone.h"
 #import "godot_view_gesture_recognizer.h"
@@ -39,10 +39,10 @@
 #import <CoreMotion/CoreMotion.h>
 
 static const int max_touches = 8;
+static const float earth_gravity = 9.80665;
 
 @interface GodotView () {
 	UITouch *godot_touches[max_touches];
-	String keyboard_text;
 }
 
 @property(assign, nonatomic) BOOL isActive;
@@ -121,6 +121,7 @@ static const int max_touches = 8;
 	[self stopRendering];
 
 	self.renderer = nil;
+	self.delegate = nil;
 
 	if (self.renderingLayer) {
 		[self.renderingLayer removeFromSuperlayer];
@@ -242,6 +243,14 @@ static const int max_touches = 8;
 		return;
 	}
 
+	if (self.delegate) {
+		BOOL delegateFinishedSetup = [self.delegate godotViewFinishedSetup:self];
+
+		if (!delegateFinishedSetup) {
+			return;
+		}
+	}
+
 	[self handleMotion];
 	[self.renderer renderOnView:self];
 }
@@ -278,52 +287,18 @@ static const int max_touches = 8;
 
 // MARK: - Input
 
-// MARK: Keyboard
-
-- (BOOL)canBecomeFirstResponder {
-	return YES;
-}
-
-- (BOOL)becomeFirstResponderWithString:(String)p_existing {
-	keyboard_text = p_existing;
-	return [self becomeFirstResponder];
-}
-
-- (BOOL)resignFirstResponder {
-	keyboard_text = String();
-	return [super resignFirstResponder];
-}
-
-- (void)deleteBackward {
-	if (keyboard_text.length()) {
-		keyboard_text.erase(keyboard_text.length() - 1, 1);
-	}
-	DisplayServerIPhone::get_singleton()->key(KEY_BACKSPACE, true);
-}
-
-- (BOOL)hasText {
-	return keyboard_text.length() > 0;
-}
-
-- (void)insertText:(NSString *)p_text {
-	String character;
-	character.parse_utf8([p_text UTF8String]);
-	keyboard_text = keyboard_text + character;
-	DisplayServerIPhone::get_singleton()->key(character[0] == 10 ? KEY_ENTER : character[0], true);
-}
-
 // MARK: Touches
 
 - (void)initTouches {
 	for (int i = 0; i < max_touches; i++) {
-		godot_touches[i] = NULL;
+		godot_touches[i] = nullptr;
 	}
 }
 
 - (int)getTouchIDForTouch:(UITouch *)p_touch {
 	int first = -1;
 	for (int i = 0; i < max_touches; i++) {
-		if (first == -1 && godot_touches[i] == NULL) {
+		if (first == -1 && godot_touches[i] == nullptr) {
 			first = i;
 			continue;
 		}
@@ -343,11 +318,11 @@ static const int max_touches = 8;
 - (int)removeTouch:(UITouch *)p_touch {
 	int remaining = 0;
 	for (int i = 0; i < max_touches; i++) {
-		if (godot_touches[i] == NULL) {
+		if (godot_touches[i] == nullptr) {
 			continue;
 		}
 		if (godot_touches[i] == p_touch) {
-			godot_touches[i] = NULL;
+			godot_touches[i] = nullptr;
 		} else {
 			++remaining;
 		}
@@ -357,7 +332,7 @@ static const int max_touches = 8;
 
 - (void)clearTouches {
 	for (int i = 0; i < max_touches; i++) {
-		godot_touches[i] = NULL;
+		godot_touches[i] = nullptr;
 	}
 }
 
@@ -428,9 +403,18 @@ static const int max_touches = 8;
 	// https://developer.apple.com/reference/coremotion/cmmotionmanager?language=objc
 
 	// Apple splits our accelerometer date into a gravity and user movement
-	// component. We add them back together
+	// component. We add them back together.
 	CMAcceleration gravity = self.motionManager.deviceMotion.gravity;
 	CMAcceleration acceleration = self.motionManager.deviceMotion.userAcceleration;
+
+	// To be consistent with Android we convert the unit of measurement from g (Earth's gravity)
+	// to m/s^2.
+	gravity.x *= earth_gravity;
+	gravity.y *= earth_gravity;
+	gravity.z *= earth_gravity;
+	acceleration.x *= earth_gravity;
+	acceleration.y *= earth_gravity;
+	acceleration.z *= earth_gravity;
 
 	///@TODO We don't seem to be getting data here, is my device broken or
 	/// is this code incorrect?

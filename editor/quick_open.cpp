@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -102,16 +102,16 @@ void EditorQuickOpen::_update_search() {
 			ti->set_icon(0, *icons.lookup_ptr(entries[i].path.get_extension()));
 		}
 
-		TreeItem *to_select = root->get_children();
+		TreeItem *to_select = root->get_first_child();
 		to_select->select(0);
 		to_select->set_as_cursor(0);
 		search_options->scroll_to_item(to_select);
 
-		get_ok()->set_disabled(false);
+		get_ok_button()->set_disabled(false);
 	} else {
 		search_options->deselect_all();
 
-		get_ok()->set_disabled(true);
+		get_ok_button()->set_disabled(true);
 	}
 }
 
@@ -170,7 +170,7 @@ void EditorQuickOpen::_sbox_input(const Ref<InputEvent> &p_ie) {
 
 				if (allow_multi_select) {
 					TreeItem *root = search_options->get_root();
-					if (!root->get_children()) {
+					if (!root->get_first_child()) {
 						break;
 					}
 
@@ -256,6 +256,6 @@ EditorQuickOpen::EditorQuickOpen() {
 	search_options->add_theme_constant_override("draw_guides", 1);
 	vbc->add_margin_child(TTR("Matches:"), search_options, true);
 
-	get_ok()->set_text(TTR("Open"));
+	get_ok_button()->set_text(TTR("Open"));
 	set_hide_on_ok(false);
 }

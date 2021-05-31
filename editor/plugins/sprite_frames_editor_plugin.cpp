@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,8 +30,9 @@
 
 #include "sprite_frames_editor_plugin.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/resource_loader.h"
-#include "core/project_settings.h"
+#include "core/os/keyboard.h"
 #include "editor/editor_scale.h"
 #include "editor/editor_settings.h"
 #include "scene/3d/sprite_3d.h"
@@ -74,8 +75,8 @@ void SpriteFramesEditor::_sheet_preview_draw() {
 	}
 
 	if (frames_selected.size() == 0) {
-		split_sheet_dialog->get_ok()->set_disabled(true);
-		split_sheet_dialog->get_ok()->set_text(TTR("No Frames Selected"));
+		split_sheet_dialog->get_ok_button()->set_disabled(true);
+		split_sheet_dialog->get_ok_button()->set_text(TTR("No Frames Selected"));
 		return;
 	}
 
@@ -97,14 +98,14 @@ void SpriteFramesEditor::_sheet_preview_draw() {
 		split_sheet_preview->draw_rect(Rect2(x + 5, y + 5, width - 10, height - 10), Color(0, 0, 0, 1), false);
 	}
 
-	split_sheet_dialog->get_ok()->set_disabled(false);
-	split_sheet_dialog->get_ok()->set_text(vformat(TTR("Add %d Frame(s)"), frames_selected.size()));
+	split_sheet_dialog->get_ok_button()->set_disabled(false);
+	split_sheet_dialog->get_ok_button()->set_text(vformat(TTR("Add %d Frame(s)"), frames_selected.size()));
 }
 
 void SpriteFramesEditor::_sheet_preview_input(const Ref<InputEvent> &p_event) {
 	Ref<InputEventMouseButton> mb = p_event;
 
-	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == BUTTON_LEFT) {
+	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MOUSE_BUTTON_LEFT) {
 		Size2i size = split_sheet_preview->get_size();
 		int h = split_sheet_h->get_value();
 		int v = split_sheet_v->get_value();
@@ -114,7 +115,7 @@ void SpriteFramesEditor::_sheet_preview_input(const Ref<InputEvent> &p_event) {
 
 		int idx = h * y + x;
 
-		if (mb->get_shift() && last_frame_selected >= 0) {
+		if (mb->is_shift_pressed() && last_frame_selected >= 0) {
 			//select multiple
 			int from = idx;
 			int to = last_frame_selected;
@@ -123,7 +124,7 @@ void SpriteFramesEditor::_sheet_preview_input(const Ref<InputEvent> &p_event) {
 			}
 
 			for (int i = from; i <= to; i++) {
-				if (mb->get_control()) {
+				if (mb->is_ctrl_pressed()) {
 					frames_selected.erase(i);
 				} else {
 					frames_selected.insert(i);
@@ -149,11 +150,11 @@ void SpriteFramesEditor::_sheet_scroll_input(const Ref<InputEvent> &p_event) {
 		// Zoom in/out using Ctrl + mouse wheel. This is done on the ScrollContainer
 		// to allow performing this action anywhere, even if the cursor isn't
 		// hovering the texture in the workspace.
-		if (mb->get_button_index() == BUTTON_WHEEL_UP && mb->is_pressed() && mb->get_control()) {
+		if (mb->get_button_index() == MOUSE_BUTTON_WHEEL_UP && mb->is_pressed() && mb->is_ctrl_pressed()) {
 			_sheet_zoom_in();
 			// Don't scroll up after zooming in.
 			accept_event();
-		} else if (mb->get_button_index() == BUTTON_WHEEL_DOWN && mb->is_pressed() && mb->get_control()) {
+		} else if (mb->get_button_index() == MOUSE_BUTTON_WHEEL_DOWN && mb->is_pressed() && mb->is_ctrl_pressed()) {
 			_sheet_zoom_out();
 			// Don't scroll down after zooming out.
 			accept_event();
@@ -218,7 +219,8 @@ void SpriteFramesEditor::_sheet_zoom_out() {
 }
 
 void SpriteFramesEditor::_sheet_zoom_reset() {
-	sheet_zoom = 1.f;
+	// Default the zoom to match the editor scale, but don't dezoom on editor scales below 100% to prevent pixel art from looking bad.
+	sheet_zoom = MAX(1.0f, EDSCALE);
 	Size2 texture_size = split_sheet_preview->get_texture()->get_size();
 	split_sheet_preview->set_custom_minimum_size(texture_size * sheet_zoom);
 }
@@ -250,10 +252,10 @@ void SpriteFramesEditor::_prepare_sprite_sheet(const String &p_file) {
 		EditorNode::get_singleton()->show_warning(TTR("Unable to load images"));
 		ERR_FAIL_COND(!texture.is_valid());
 	}
-	bool new_texture = texture != split_sheet_preview->get_texture();
 	frames_selected.clear();
 	last_frame_selected = -1;
 
+	bool new_texture = texture != split_sheet_preview->get_texture();
 	split_sheet_preview->set_texture(texture);
 	if (new_texture) {
 		//different texture, reset to 4x4
@@ -278,17 +280,17 @@ void SpriteFramesEditor::_notification(int p_what) {
 			move_down->set_icon(get_theme_icon("MoveRight", "EditorIcons"));
 			_delete->set_icon(get_theme_icon("Remove", "EditorIcons"));
 			zoom_out->set_icon(get_theme_icon("ZoomLess", "EditorIcons"));
-			zoom_1->set_icon(get_theme_icon("ZoomReset", "EditorIcons"));
+			zoom_reset->set_icon(get_theme_icon("ZoomReset", "EditorIcons"));
 			zoom_in->set_icon(get_theme_icon("ZoomMore", "EditorIcons"));
 			new_anim->set_icon(get_theme_icon("New", "EditorIcons"));
 			remove_anim->set_icon(get_theme_icon("Remove", "EditorIcons"));
 			split_sheet_zoom_out->set_icon(get_theme_icon("ZoomLess", "EditorIcons"));
-			split_sheet_zoom_1->set_icon(get_theme_icon("ZoomReset", "EditorIcons"));
+			split_sheet_zoom_reset->set_icon(get_theme_icon("ZoomReset", "EditorIcons"));
 			split_sheet_zoom_in->set_icon(get_theme_icon("ZoomMore", "EditorIcons"));
 			[[fallthrough]];
 		}
 		case NOTIFICATION_THEME_CHANGED: {
-			splite_sheet_scroll->add_theme_style_override("bg", get_theme_stylebox("bg", "Tree"));
+			split_sheet_scroll->add_theme_style_override("bg", get_theme_stylebox("bg", "Tree"));
 		} break;
 		case NOTIFICATION_READY: {
 			add_theme_constant_override("autohide", 1); // Fixes the dragger always showing up.
@@ -310,7 +312,7 @@ void SpriteFramesEditor::_file_load_request(const Vector<String> &p_path, int p_
 			dialog->set_title(TTR("Error!"));
 
 			//dialog->get_cancel()->set_text("Close");
-			dialog->get_ok()->set_text(TTR("Close"));
+			dialog->get_ok_button()->set_text(TTR("Close"));
 			dialog->popup_centered();
 			return; ///beh should show an error i guess
 		}
@@ -318,7 +320,7 @@ void SpriteFramesEditor::_file_load_request(const Vector<String> &p_path, int p_
 		resources.push_back(resource);
 	}
 
-	if (resources.empty()) {
+	if (resources.is_empty()) {
 		return;
 	}
 
@@ -361,7 +363,7 @@ void SpriteFramesEditor::_paste_pressed() {
 		dialog->set_text(TTR("Resource clipboard is empty or not a texture!"));
 		dialog->set_title(TTR("Error!"));
 		//dialog->get_cancel()->set_text("Close");
-		dialog->get_ok()->set_text(TTR("Close"));
+		dialog->get_ok_button()->set_text(TTR("Close"));
 		dialog->popup_centered();
 		return; ///beh should show an error i guess
 	}
@@ -511,7 +513,7 @@ void SpriteFramesEditor::_animation_select() {
 
 	if (frames->has_animation(edited_anim)) {
 		double value = anim_speed->get_line_edit()->get_text().to_float();
-		if (!Math::is_equal_approx(value, frames->get_animation_speed(edited_anim))) {
+		if (!Math::is_equal_approx(value, (double)frames->get_animation_speed(edited_anim))) {
 			_animation_fps_changed(value);
 		}
 	}
@@ -692,11 +694,11 @@ void SpriteFramesEditor::_tree_input(const Ref<InputEvent> &p_event) {
 	const Ref<InputEventMouseButton> mb = p_event;
 
 	if (mb.is_valid()) {
-		if (mb->get_button_index() == BUTTON_WHEEL_UP && mb->is_pressed() && mb->get_control()) {
+		if (mb->get_button_index() == MOUSE_BUTTON_WHEEL_UP && mb->is_pressed() && mb->is_ctrl_pressed()) {
 			_zoom_in();
 			// Don't scroll up after zooming in.
 			accept_event();
-		} else if (mb->get_button_index() == BUTTON_WHEEL_DOWN && mb->is_pressed() && mb->get_control()) {
+		} else if (mb->get_button_index() == MOUSE_BUTTON_WHEEL_DOWN && mb->is_pressed() && mb->is_ctrl_pressed()) {
 			_zoom_out();
 			// Don't scroll down after zooming out.
 			accept_event();
@@ -731,7 +733,7 @@ void SpriteFramesEditor::_zoom_out() {
 }
 
 void SpriteFramesEditor::_zoom_reset() {
-	thumbnail_zoom = 1.0f;
+	thumbnail_zoom = MAX(1.0f, EDSCALE);
 	tree->set_fixed_column_width(thumbnail_default_size * 3 / 2);
 	tree->set_fixed_icon_size(Size2(thumbnail_default_size, thumbnail_default_size));
 }
@@ -952,7 +954,11 @@ void SpriteFramesEditor::drop_data_fw(const Point2 &p_point, const Variant &p_da
 	if (String(d["type"]) == "files") {
 		Vector<String> files = d["files"];
 
-		_file_load_request(files, at_pos);
+		if (Input::get_singleton()->is_key_pressed(KEY_CTRL)) {
+			_prepare_sprite_sheet(files[0]);
+		} else {
+			_file_load_request(files, at_pos);
+		}
 	}
 }
 
@@ -1080,11 +1086,13 @@ SpriteFramesEditor::SpriteFramesEditor() {
 	zoom_out->set_flat(true);
 	zoom_out->set_tooltip(TTR("Zoom Out"));
 	hbc->add_child(zoom_out);
-	zoom_1 = memnew(Button);
-	zoom_1->connect("pressed", callable_mp(this, &SpriteFramesEditor::_zoom_reset));
-	zoom_1->set_flat(true);
-	zoom_1->set_tooltip(TTR("Zoom Reset"));
-	hbc->add_child(zoom_1);
+
+	zoom_reset = memnew(Button);
+	zoom_reset->connect("pressed", callable_mp(this, &SpriteFramesEditor::_zoom_reset));
+	zoom_reset->set_flat(true);
+	zoom_reset->set_tooltip(TTR("Zoom Reset"));
+	hbc->add_child(zoom_reset);
+
 	zoom_in = memnew(Button);
 	zoom_in->connect("pressed", callable_mp(this, &SpriteFramesEditor::_zoom_in));
 	zoom_in->set_flat(true);
@@ -1177,16 +1185,16 @@ SpriteFramesEditor::SpriteFramesEditor() {
 	split_sheet_preview->connect("draw", callable_mp(this, &SpriteFramesEditor::_sheet_preview_draw));
 	split_sheet_preview->connect("gui_input", callable_mp(this, &SpriteFramesEditor::_sheet_preview_input));
 
-	splite_sheet_scroll = memnew(ScrollContainer);
-	splite_sheet_scroll->set_enable_h_scroll(true);
-	splite_sheet_scroll->set_enable_v_scroll(true);
-	splite_sheet_scroll->connect("gui_input", callable_mp(this, &SpriteFramesEditor::_sheet_scroll_input));
-	split_sheet_panel->add_child(splite_sheet_scroll);
+	split_sheet_scroll = memnew(ScrollContainer);
+	split_sheet_scroll->set_enable_h_scroll(true);
+	split_sheet_scroll->set_enable_v_scroll(true);
+	split_sheet_scroll->connect("gui_input", callable_mp(this, &SpriteFramesEditor::_sheet_scroll_input));
+	split_sheet_panel->add_child(split_sheet_scroll);
 	CenterContainer *cc = memnew(CenterContainer);
 	cc->add_child(split_sheet_preview);
 	cc->set_h_size_flags(SIZE_EXPAND_FILL);
 	cc->set_v_size_flags(SIZE_EXPAND_FILL);
-	splite_sheet_scroll->add_child(cc);
+	split_sheet_scroll->add_child(cc);
 
 	MarginContainer *split_sheet_zoom_margin = memnew(MarginContainer);
 	split_sheet_panel->add_child(split_sheet_zoom_margin);
@@ -1203,12 +1211,14 @@ SpriteFramesEditor::SpriteFramesEditor() {
 	split_sheet_zoom_out->set_tooltip(TTR("Zoom Out"));
 	split_sheet_zoom_out->connect("pressed", callable_mp(this, &SpriteFramesEditor::_sheet_zoom_out));
 	split_sheet_zoom_hb->add_child(split_sheet_zoom_out);
-	split_sheet_zoom_1 = memnew(Button);
-	split_sheet_zoom_1->set_flat(true);
-	split_sheet_zoom_1->set_focus_mode(FOCUS_NONE);
-	split_sheet_zoom_1->set_tooltip(TTR("Zoom Reset"));
-	split_sheet_zoom_1->connect("pressed", callable_mp(this, &SpriteFramesEditor::_sheet_zoom_reset));
-	split_sheet_zoom_hb->add_child(split_sheet_zoom_1);
+
+	split_sheet_zoom_reset = memnew(Button);
+	split_sheet_zoom_reset->set_flat(true);
+	split_sheet_zoom_reset->set_focus_mode(FOCUS_NONE);
+	split_sheet_zoom_reset->set_tooltip(TTR("Zoom Reset"));
+	split_sheet_zoom_reset->connect("pressed", callable_mp(this, &SpriteFramesEditor::_sheet_zoom_reset));
+	split_sheet_zoom_hb->add_child(split_sheet_zoom_reset);
+
 	split_sheet_zoom_in = memnew(Button);
 	split_sheet_zoom_in->set_flat(true);
 	split_sheet_zoom_in->set_focus_mode(FOCUS_NONE);
@@ -1224,13 +1234,14 @@ SpriteFramesEditor::SpriteFramesEditor() {
 
 	// Config scale.
 	scale_ratio = 1.2f;
-	thumbnail_default_size = 96;
-	thumbnail_zoom = 1.0f;
-	max_thumbnail_zoom = 8.0f;
-	min_thumbnail_zoom = 0.1f;
-	sheet_zoom = 1.0f;
-	max_sheet_zoom = 16.0f;
-	min_sheet_zoom = 0.01f;
+	thumbnail_default_size = 96 * MAX(1, EDSCALE);
+	thumbnail_zoom = MAX(1.0f, EDSCALE);
+	max_thumbnail_zoom = 8.0f * MAX(1.0f, EDSCALE);
+	min_thumbnail_zoom = 0.1f * MAX(1.0f, EDSCALE);
+	// Default the zoom to match the editor scale, but don't dezoom on editor scales below 100% to prevent pixel art from looking bad.
+	sheet_zoom = MAX(1.0f, EDSCALE);
+	max_sheet_zoom = 16.0f * MAX(1.0f, EDSCALE);
+	min_sheet_zoom = 0.01f * MAX(1.0f, EDSCALE);
 	_zoom_reset();
 }
 

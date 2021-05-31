@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,15 +31,16 @@
 #ifndef OS_H
 #define OS_H
 
-#include "core/engine.h"
-#include "core/image.h"
+#include "core/config/engine.h"
+#include "core/io/image.h"
 #include "core/io/logger.h"
-#include "core/list.h"
 #include "core/os/main_loop.h"
-#include "core/ustring.h"
-#include "core/vector.h"
+#include "core/string/ustring.h"
+#include "core/templates/list.h"
+#include "core/templates/vector.h"
 
 #include <stdarg.h>
+#include <stdlib.h>
 
 class OS {
 	static OS *singleton;
@@ -53,16 +54,16 @@ class OS {
 	bool _debug_stdout = false;
 	String _local_clipboard;
 	bool _no_window = false;
-	int _exit_code = 0;
+	int _exit_code = EXIT_FAILURE; // unexpected exit is marked as failure
 	int _orientation;
 	bool _allow_hidpi = false;
 	bool _allow_layered = false;
 	bool _use_vsync;
 	bool _vsync_via_compositor;
+	bool _stdout_enabled = true;
+	bool _stderr_enabled = true;
 
 	char *last_error;
-
-	void *_stack_bottom;
 
 	CompositeLogger *_logger = nullptr;
 
@@ -77,7 +78,6 @@ public:
 	typedef bool (*HasServerFeatureCallback)(const String &p_feature);
 
 	enum RenderThreadMode {
-
 		RENDER_THREAD_UNSAFE,
 		RENDER_THREAD_SAFE,
 		RENDER_SEPARATE_THREAD
@@ -132,7 +132,8 @@ public:
 	virtual int get_low_processor_usage_mode_sleep_usec() const;
 
 	virtual String get_executable_path() const;
-	virtual Error execute(const String &p_path, const List<String> &p_arguments, bool p_blocking = true, ProcessID *r_child_id = nullptr, String *r_pipe = nullptr, int *r_exitcode = nullptr, bool read_stderr = false, Mutex *p_pipe_mutex = nullptr) = 0;
+	virtual Error execute(const String &p_path, const List<String> &p_arguments, String *r_pipe = nullptr, int *r_exitcode = nullptr, bool read_stderr = false, Mutex *p_pipe_mutex = nullptr) = 0;
+	virtual Error create_process(const String &p_path, const List<String> &p_arguments, ProcessID *r_child_id = nullptr) = 0;
 	virtual Error kill(const ProcessID &p_pid) = 0;
 	virtual int get_process_id() const;
 	virtual void vibrate_handheld(int p_duration_ms = 500);
@@ -150,11 +151,6 @@ public:
 
 	bool is_layered_allowed() const { return _allow_layered; }
 	bool is_hidpi_allowed() const { return _allow_hidpi; }
-
-	virtual int get_tablet_driver_count() const { return 0; };
-	virtual String get_tablet_driver_name(int p_driver) const { return ""; };
-	virtual String get_current_tablet_driver() const { return ""; };
-	virtual void set_current_tablet_driver(const String &p_driver){};
 
 	void ensure_user_data_dir();
 
@@ -224,6 +220,11 @@ public:
 
 	bool is_stdout_verbose() const;
 	bool is_stdout_debug_enabled() const;
+
+	bool is_stdout_enabled() const;
+	bool is_stderr_enabled() const;
+	void set_stdout_enabled(bool p_enabled);
+	void set_stderr_enabled(bool p_enabled);
 
 	virtual void disable_crash_handler() {}
 	virtual bool is_disable_crash_handler() const { return false; }

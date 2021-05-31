@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,12 +30,12 @@
 
 #include "test_render.h"
 
+#include "core/math/convex_hull.h"
 #include "core/math/math_funcs.h"
-#include "core/math/quick_hull.h"
 #include "core/os/keyboard.h"
 #include "core/os/main_loop.h"
 #include "core/os/os.h"
-#include "core/print_string.h"
+#include "core/string/print_string.h"
 #include "servers/display_server.h"
 #include "servers/rendering_server.h"
 
@@ -98,7 +98,6 @@ public:
 			}
 		}*/
 		/*for(int i=0;i<100;i++) {
-
 			vts.push_back( Vector3(Math::randf()*2-1.0,Math::randf()*2-1.0,Math::randf()*2-1.0).normalized()*2);
 		}*/
 		/*
@@ -119,7 +118,7 @@ public:
 		vts.push_back(Vector3(-1, -1, -1));
 
 		Geometry3D::MeshData md;
-		Error err = QuickHull::build(vts, md);
+		Error err = ConvexHullComputer::convex_hull(vts, md);
 		print_line("ERR: " + itos(err));
 		test_cube = vs->mesh_create();
 		vs->mesh_add_surface_from_mesh_data(test_cube, md);
@@ -184,8 +183,8 @@ public:
 		//vs->light_set_shadow( lightaux, true );
 		light = vs->instance_create2(lightaux, scenario);
 		Transform lla;
-		//lla.set_look_at(Vector3(),Vector3(1,-1,1),Vector3(0,1,0));
-		lla.set_look_at(Vector3(), Vector3(-0.000000, -0.836026, -0.548690), Vector3(0, 1, 0));
+		//lla.set_look_at(Vector3(),Vector3(1, -1, 1));
+		lla.set_look_at(Vector3(), Vector3(0.0, -0.836026, -0.548690));
 
 		vs->instance_set_transform(light, lla);
 
@@ -216,7 +215,6 @@ public:
 			vs->instance_set_transform(E->get().instance, pre * E->get().base);
 			/*
 			if( !E->next() ) {
-
 				vs->free( E->get().instance );
 				instances.erase(E );
 			}*/
@@ -236,5 +234,4 @@ public:
 MainLoop *test() {
 	return memnew(TestMainLoop);
 }
-
 } // namespace TestRender
